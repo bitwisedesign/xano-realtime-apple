@@ -11,6 +11,8 @@ private enum PublicAPIScanner {
         var name: String
         /// Whether enum cases at this frame's body depth are public API.
         var recordsCases: Bool
+        /// Whether unmarked members inherit public access from this declaration.
+        var inheritsPublicAccess: Bool
         /// Brace depth of the type or extension body.
         var bodyDepth: Int
     }
@@ -35,6 +37,14 @@ private enum PublicAPIScanner {
         var name: String
         /// Accumulated text starting at the opening `(`.
         var buffer: String
+    }
+
+    /// A parsed `extension TypeName` line.
+    private struct ExtensionDeclaration {
+        /// Extended type name used for member keys.
+        var name: String
+        /// Whether the extension is marked `public`.
+        var isPublic: Bool
     }
 
     /// A parsed `public` member on one line.
@@ -154,6 +164,7 @@ private enum PublicAPIScanner {
                 pushFrameIfBodyOpens(
                     name: typeDecl.name,
                     recordsCases: typeDecl.isPublic && typeDecl.kind == "enum",
+                    inheritsPublicAccess: typeDecl.isPublic && typeDecl.kind == "protocol",
                     in: trimmed,
                     depth: depth,
                     stack: &stack,
@@ -163,10 +174,11 @@ private enum PublicAPIScanner {
             }
             return
         }
-        if let extensionName = parseExtensionName(trimmed) {
+        if let extensionDecl = parseExtensionDeclaration(trimmed) {
             pushFrameIfBodyOpens(
-                name: extensionName,
+                name: extensionDecl.name,
                 recordsCases: false,
+                inheritsPublicAccess: extensionDecl.isPublic,
                 in: trimmed,
                 depth: depth,
                 stack: &stack,
@@ -187,7 +199,7 @@ private enum PublicAPIScanner {
                 return
             }
         }
-        if let member = parsePublicMember(trimmed) {
+        if let member = parsePublicMember(trimmed, inheritsPublicAccess: current.inheritsPublicAccess) {
             recordMember(member, on: current.name, pending: &pending, symbols: &symbols)
         }
     }
@@ -207,21 +219,26 @@ private enum PublicAPIScanner {
         return TypeDeclaration(name: name, kind: kind, isPublic: isPublic)
     }
 
-    /// Parses `extension TypeName`.
-    private static func parseExtensionName(_ trimmed: String) -> String? {
+    /// Parses `extension TypeName` after any modifier prefix.
+    private static func parseExtensionDeclaration(_ trimmed: String) -> ExtensionDeclaration? {
         var rest = trimmed[...]
         skipAttributes(from: &rest)
+        let isPublic = consumePublicAPIModifiers(from: &rest, stoppingBefore: ["extension"])
         guard consumeKeyword("extension", from: &rest) else {
             return nil
         }
         skipWhitespace(&rest)
-        return takeIdentifier(from: &rest)
+        guard let name = takeIdentifier(from: &rest) else {
+            return nil
+        }
+        return ExtensionDeclaration(name: name, isPublic: isPublic)
     }
 
     /// Pushes a type frame when `trimmed` opens a body, then scans any same-line members or cases.
     private static func pushFrameIfBodyOpens(
         name: String,
         recordsCases: Bool,
+        inheritsPublicAccess: Bool,
         in trimmed: String,
         depth: Int,
         stack: inout [TypeFrame],
@@ -235,6 +252,7 @@ private enum PublicAPIScanner {
             TypeFrame(
                 name: name,
                 recordsCases: recordsCases,
+                inheritsPublicAccess: inheritsPublicAccess,
                 bodyDepth: depth + 1
             )
         )
@@ -268,11 +286,21 @@ private enum PublicAPIScanner {
         }
     }
 
-    /// Parses `func|var|let|subscript|init` when the modifier prefix includes `public` or `open`.
-    private static func parsePublicMember(_ trimmed: String) -> MemberDeclaration? {
+    /// Parses `func|var|let|subscript|init` when the member is public API.
+    ///
+    /// A member is public when the modifier prefix includes `public` or `open`,
+    /// or when `inheritsPublicAccess` is true and no narrower access is spelled.
+    private static func parsePublicMember(
+        _ trimmed: String,
+        inheritsPublicAccess: Bool
+    ) -> MemberDeclaration? {
         var rest = trimmed[...]
         skipAttributes(from: &rest)
-        guard consumePublicAPIModifiers(from: &rest, stoppingBefore: memberKinds) else {
+        guard consumePublicAPIModifiers(
+            from: &rest,
+            stoppingBefore: memberKinds,
+            inheritsPublicAccess: inheritsPublicAccess
+        ) else {
             return nil
         }
         guard let kind = consumeOne(of: memberKinds, from: &rest) else {
@@ -569,17 +597,29 @@ private enum PublicAPIScanner {
         }
     }
 
-    /// Whether `public` or `open` appeared before the next type or member kind.
+    /// Whether the declaration is public API after consuming its modifier prefix.
     ///
     /// Consumes access-control and declaration modifiers, including parenthesized
     /// forms such as `private(set)`, until the next token is a kind in `kinds` or
-    /// is not a modifier.
+    /// is not a modifier. An explicit `public` or `open` is public. An explicit
+    /// narrower access modifier is not. Setter-only forms do not change access.
+    /// When `inheritsPublicAccess` is true, unmarked declarations are public.
+    ///
+    /// - Parameters:
+    ///   - rest: Remaining declaration text.
+    ///   - kinds: Keywords that end the modifier prefix.
+    ///   - inheritsPublicAccess: Treat unmarked declarations as public.
+    /// - Returns: Whether the declaration is public API.
     private static func consumePublicAPIModifiers(
         from rest: inout Substring,
-        stoppingBefore kinds: [String]
+        stoppingBefore kinds: [String],
+        inheritsPublicAccess: Bool = false
     ) -> Bool {
-        var isPublicAPI = false
+        var isPublicAPI = inheritsPublicAccess
         let kindSet = Set(kinds)
+        let accessModifiers: Set<String> = [
+            "public", "open", "package", "internal", "fileprivate", "private"
+        ]
         while true {
             skipWhitespace(&rest)
             guard let word = peekIdentifier(rest) else {
@@ -591,13 +631,14 @@ private enum PublicAPIScanner {
             guard declarationModifiers.contains(word) else {
                 return isPublicAPI
             }
-            if word == "public" || word == "open" {
-                isPublicAPI = true
-            }
             _ = takeIdentifier(from: &rest)
             skipWhitespace(&rest)
-            if rest.first == "(" {
+            let hasArgument = rest.first == "("
+            if hasArgument {
                 skipBalancedParens(from: &rest)
+            }
+            if accessModifiers.contains(word), !hasArgument {
+                isPublicAPI = word == "public" || word == "open"
             }
         }
     }
@@ -763,6 +804,47 @@ func doesNotAttributeMembersAfterATypealiasToTheAlias() {
     #expect(symbols.contains("AliasName"))
     #expect(symbols.contains("Container.member"))
     #expect(!symbols.contains("AliasName.member"))
+}
+
+@Test("records unmarked requirements of a public protocol")
+func recordsUnmarkedRequirementsOfAPublicProtocol() {
+    let symbols = PublicAPIScanner.scan(
+        source: """
+        public protocol Drawable {
+            var size: Int { get }
+            func draw()
+            init()
+        }
+        """
+    )
+    #expect(symbols.contains("Drawable"))
+    #expect(symbols.contains("Drawable.size"))
+    #expect(symbols.contains("Drawable.draw()"))
+    #expect(symbols.contains("Drawable.init()"))
+}
+
+@Test("records unmarked members of a public extension")
+func recordsUnmarkedMembersOfAPublicExtension() {
+    let symbols = PublicAPIScanner.scan(
+        source: """
+        public struct Widget {}
+        public extension Widget {
+            var label: String { "x" }
+            private(set) var locked: Int
+            func ping() {}
+            public func poke() {}
+            private func hide() {}
+            internal func stash() {}
+        }
+        """
+    )
+    #expect(symbols.contains("Widget"))
+    #expect(symbols.contains("Widget.label"))
+    #expect(symbols.contains("Widget.locked"))
+    #expect(symbols.contains("Widget.ping()"))
+    #expect(symbols.contains("Widget.poke()"))
+    #expect(!symbols.contains("Widget.hide()"))
+    #expect(!symbols.contains("Widget.stash()"))
 }
 
 @Test("scanned public API matches the approved inventory")
