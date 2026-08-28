@@ -155,6 +155,7 @@ func offlineQueuePreservesUndeliveredOnWriteFailure() async throws {
     let firstTask = try #require(await provider.latestTask)
     await firstTask.setSendError(XanoRealtimeError.connectionClosed(code: .abnormalClosure))
     await provider.setAutoOpenOnResume(true)
+    let baseline = await states.all.count
     await firstTask.simulateOpen()
 
     let failure = try await events.wait { event in
@@ -170,7 +171,11 @@ func offlineQueuePreservesUndeliveredOnWriteFailure() async throws {
     }
     #expect(try await firstTask.sentEnvelopes.isEmpty)
     #expect(await firstTask.cancelCode == .abnormalClosure)
-    _ = try await states.wait(matching: { $0 == .connected })
+    _ = try await states.wait(after: baseline, matching: { state in
+        if case .reconnecting = state { return true }
+        return false
+    })
+    _ = try await states.wait(after: baseline, matching: { $0 == .connected })
 
     #expect(await provider.tasks.count >= 2)
     let secondTask = try #require(await provider.latestTask)
