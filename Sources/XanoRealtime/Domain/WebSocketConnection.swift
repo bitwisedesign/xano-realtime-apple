@@ -250,6 +250,10 @@ actor WebSocketConnection: WebSocketLifecycleSink {
 
     /// Creates a task, resumes it, and starts the receive loop.
     ///
+    /// After ``makeTask(url:protocols:sink:)`` returns, the captured epoch must
+    /// still be current and the connection must still be opening. Otherwise the
+    /// new task is cancelled and discarded (a concurrent close invalidated it).
+    ///
     /// - Throws: ``XanoRealtimeError/invalidConfiguration(_:)`` when the URL cannot be built.
     private func openSocket() async throws {
         let url = try configuration.makeConnectionURL()
@@ -262,6 +266,10 @@ actor WebSocketConnection: WebSocketLifecycleSink {
             protocols: configuration.webSocketProtocols,
             sink: SocketEpochSink(connection: self, epoch: epoch)
         )
+        guard epoch == socketEpoch, isConnectingOrReconnecting else {
+            await nextTask.cancel(with: .normalClosure, reason: nil)
+            return
+        }
         task = nextTask
         await nextTask.resume()
         startReceiveLoop(on: nextTask, epoch: epoch)
@@ -355,15 +363,15 @@ actor WebSocketConnection: WebSocketLifecycleSink {
 
     /// Writes queued envelopes in insertion order after reconnect.
     ///
-    /// A transport failure stops the flush and puts the failed envelope plus any
-    /// not-yet-written envelopes back on ``offlineQueue`` for the next reconnect.
-    /// Encoding failures are reported and skipped so they cannot block the queue.
+    /// Drains ``offlineQueue`` itself so envelopes appended during a suspended
+    /// write are sent before the socket is marked connected. A transport failure
+    /// stops the flush and puts the failed envelope back at the front, leaving
+    /// any not-yet-written envelopes (including those appended during the write)
+    /// on the queue for the next reconnect. Encoding failures are reported and
+    /// skipped so they cannot block the queue.
     private func flushOfflineQueue() async {
-        let queued = offlineQueue
-        offlineQueue.removeAll()
-        var remaining = queued
-        while !remaining.isEmpty {
-            let envelope = remaining.removeFirst()
+        while !offlineQueue.isEmpty {
+            let envelope = offlineQueue.removeFirst()
             do {
                 try await write(envelope)
             } catch let error as XanoRealtimeError {
@@ -371,11 +379,11 @@ actor WebSocketConnection: WebSocketLifecycleSink {
                 if case .encodingFailed = error {
                     continue
                 }
-                offlineQueue.insert(contentsOf: [envelope] + remaining, at: 0)
+                offlineQueue.insert(envelope, at: 0)
                 return
             } catch {
                 eventsContinuation.yield(.failure(.connectionClosed(code: lastCloseCode)))
-                offlineQueue.insert(contentsOf: [envelope] + remaining, at: 0)
+                offlineQueue.insert(envelope, at: 0)
                 return
             }
         }
@@ -410,12 +418,15 @@ actor WebSocketConnection: WebSocketLifecycleSink {
 
     /// Cancels loops and the active socket.
     ///
-    /// Sets ``isHandlingClose`` first so the adapter's close callback and a cancelled
+    /// Increments ``socketEpoch`` first so an in-flight ``openSocket()`` that is
+    /// still awaiting ``makeTask(url:protocols:sink:)`` will discard the result.
+    /// Sets ``isHandlingClose`` next so the adapter's close callback and a cancelled
     /// receive loop do not enter ``handleTransportFailure(code:)`` for an intentional
     /// disconnect or auth-token reconnect.
     ///
     /// - Parameter code: Close code to send.
     private func closeActiveSocket(code: WebSocketCloseCode) async {
+        socketEpoch += 1
         isHandlingClose = true
         heartbeatTask?.cancel()
         heartbeatTask = nil

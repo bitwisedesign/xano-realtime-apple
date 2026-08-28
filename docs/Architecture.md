@@ -6,9 +6,9 @@ This package uses a **Hexagonal (Ports & Adapters)** core, an **actor** concurre
 
 ```text
 Integrator app
-    → XanoRealtimeClient (facade, actor)
+    → XanoRealtimeClient (facade, actor, envelope fan-out)
         → XanoRealtimeChannel (actor)
-            → Domain: models, state machine, backoff, fan-out
+            → Domain: models, state machine, backoff
                 → WebSocketProviding (port)
                     → URLSessionWebSocketProvider (production adapter)
                     → MockWebSocketProvider (tests)

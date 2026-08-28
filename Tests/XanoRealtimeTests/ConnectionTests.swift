@@ -103,6 +103,37 @@ func offlineQueueFlushesInOrder() async throws {
     #expect(sent.map(\.payload) == [first.payload, second.payload])
 }
 
+@Test("flushes envelopes queued while a flush write is suspended")
+func offlineQueueDrainsEntriesAppendedDuringFlush() async throws {
+    let provider = MockWebSocketProvider()
+    await provider.setAutoOpenOnResume(false)
+    let connection = WebSocketConnection(
+        configuration: try testConfiguration(queueOfflineActions: true),
+        provider: provider,
+        delay: ImmediateDelay()
+    )
+    let states = await collect(connection.stateStream)
+
+    let first = RealtimeCoder.shared.message(channel: "a", payload: .string("one"))
+    let second = RealtimeCoder.shared.message(channel: "a", payload: .string("two"))
+    let third = RealtimeCoder.shared.message(channel: "a", payload: .string("three"))
+    try await connection.send(first)
+    try await connection.send(second)
+
+    try await connection.connect()
+    let task = try #require(await provider.latestTask)
+    await task.setSendWillStart {
+        // Best-effort: queuing is enabled and the socket is not yet connected.
+        try? await connection.send(third)
+    }
+    await task.simulateOpen()
+
+    _ = try await states.wait(matching: { $0 == .connected })
+
+    let sent = try await task.sentEnvelopes
+    #expect(sent.map(\.payload) == [first.payload, second.payload, third.payload])
+}
+
 @Test("requeues undelivered offline envelopes after a flush write failure")
 func offlineQueuePreservesUndeliveredOnWriteFailure() async throws {
     let provider = MockWebSocketProvider()
@@ -161,6 +192,26 @@ func sendThrowsWhenDisconnected() async throws {
     await #expect(throws: XanoRealtimeError.notConnected) {
         try await connection.send(envelope)
     }
+}
+
+@Test("discards a socket created after disconnect starts")
+func openSocketDiscardsStaleTaskAfterDisconnect() async throws {
+    let provider = MockWebSocketProvider()
+    let connection = WebSocketConnection(
+        configuration: try testConfiguration(),
+        provider: provider,
+        delay: ImmediateDelay()
+    )
+    await provider.setMakeTaskWillReturn {
+        await connection.disconnect()
+    }
+
+    try await connection.connect()
+
+    let task = try #require(await provider.latestTask)
+    #expect(await task.didResume == false)
+    #expect(await task.cancelCode == .normalClosure)
+    #expect(await connection.connectionState == .disconnected)
 }
 
 @Test("setAuthToken cancels with code 4000")

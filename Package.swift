@@ -17,8 +17,7 @@ let package = Package(
         .target(
             name: "XanoRealtime",
             swiftSettings: [
-                .swiftLanguageMode(.v6),
-                .unsafeFlags(["-warnings-as-errors"])
+                .swiftLanguageMode(.v6)
             ]
         ),
         .testTarget(

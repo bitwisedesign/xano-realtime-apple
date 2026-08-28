@@ -15,6 +15,8 @@ actor MockWebSocketProvider: WebSocketProviding {
     private(set) var autoOpenOnResume = true
     /// When set, the next `sendPing` on a new task throws this error.
     private(set) var pingError: Error?
+    /// One-shot hook invoked after the next task is created, before ``makeTask(url:protocols:sink:)`` returns.
+    private var makeTaskWillReturn: (@Sendable () async -> Void)?
 
     /// Sets whether ``MockWebSocketTask/resume()`` synthesizes an open event.
     ///
@@ -28,6 +30,13 @@ actor MockWebSocketProvider: WebSocketProviding {
     /// - Parameter pingError: Error to throw, or `nil`.
     func setPingError(_ pingError: Error?) {
         self.pingError = pingError
+    }
+
+    /// Sets a hook that runs once after the next task is created, before return.
+    ///
+    /// - Parameter makeTaskWillReturn: Hook to run, or `nil`.
+    func setMakeTaskWillReturn(_ makeTaskWillReturn: (@Sendable () async -> Void)?) {
+        self.makeTaskWillReturn = makeTaskWillReturn
     }
 
     // MARK: - Public API
@@ -46,6 +55,11 @@ actor MockWebSocketProvider: WebSocketProviding {
             pingError: pingError
         )
         tasks.append(task)
+        let hook = makeTaskWillReturn
+        makeTaskWillReturn = nil
+        if let hook {
+            await hook()
+        }
         return task
     }
 
@@ -67,6 +81,8 @@ actor MockWebSocketTask: WebSocketTasking {
     private let pingError: Error?
     /// Optional error thrown from the next ``send(_:)``.
     private var sendError: Error?
+    /// One-shot hook invoked at the start of the next ``send(_:)``.
+    private var sendWillStart: (@Sendable () async -> Void)?
     /// Frames waiting to be received.
     private var inbound: [Result<WebSocketMessage, Error>] = []
     /// Continuations blocked in ``receive()``.
@@ -121,6 +137,11 @@ actor MockWebSocketTask: WebSocketTasking {
 
     /// Records an outbound frame, or throws ``sendError`` when set.
     func send(_ message: WebSocketMessage) async throws {
+        let hook = sendWillStart
+        sendWillStart = nil
+        if let hook {
+            await hook()
+        }
         // Yield so a caller that publishes `connected` before flushing can lose
         // the race, matching a real transport hop.
         await Task.yield()
@@ -135,6 +156,13 @@ actor MockWebSocketTask: WebSocketTasking {
     /// - Parameter sendError: Error to throw, or `nil`.
     func setSendError(_ sendError: Error?) {
         self.sendError = sendError
+    }
+
+    /// Sets a hook that runs once at the start of the next ``send(_:)``.
+    ///
+    /// - Parameter sendWillStart: Hook to run, or `nil`.
+    func setSendWillStart(_ sendWillStart: (@Sendable () async -> Void)?) {
+        self.sendWillStart = sendWillStart
     }
 
     /// Increments ``pingCount`` or throws the configured ping error.

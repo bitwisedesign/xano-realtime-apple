@@ -35,7 +35,7 @@ let lobby = await client.channel("lobby", options: ChannelOptions(presence: true
 for await event in await lobby.events {
     switch event {
     case .connected:
-        try await lobby.send(["text": "hello"])
+        try await lobby.send(["text": "connected"])
     case .message(let message):
         print(message.payload)
     case .presenceFull(let peers):
