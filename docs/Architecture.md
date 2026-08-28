@@ -35,7 +35,7 @@ Mutable socket state lives inside `WebSocketConnection`. There are no locks and 
 1. The adapter delivers frames through `WebSocketTasking.receive()`.
 2. `WebSocketConnection` decodes `RealtimeEnvelope` values and yields `ConnectionEvent`s.
 3. `XanoRealtimeClient` fans envelopes out: global `connection_status` to every channel; otherwise by `options.channel`.
-4. Each `XanoRealtimeChannel` maps the envelope to `RealtimeEvent` and yields on its `AsyncStream`.
+4. Each `XanoRealtimeChannel` maps the envelope to `RealtimeEvent` and yields on its `AsyncStream`. Wire types (`RealtimeEnvelope`, `RealtimeAction`, `RealtimeActionOptions`) stay module-internal; unrecognized actions surface as `RealtimeEvent.unhandled`.
 
 On open, the connection synthesizes `connection_status: connected`. The client then re-sends `join` for every registered channel (JS SDK parity).
 

@@ -77,5 +77,6 @@ Swift maps `dbo_id` / `row_id` to `RealtimePermissions.dboID` / `rowID`.
 | --- | --- | --- |
 | `history` | `false` | Sent in join payload |
 | `presence` | `false` | Sent in join payload |
-| `queueOfflineActions` | `false` | JS parity: default off. Not consulted at send time; `XanoRealtimeConfiguration.queueOfflineActions` is the flag that queues. |
 | `catchUpOnForeground` | `false` | After `enterForeground()`, send `history` |
+
+Offline send queuing is `XanoRealtimeConfiguration.queueOfflineActions`, not a channel option.

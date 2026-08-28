@@ -9,10 +9,12 @@ public struct RealtimePermissions: Codable, Sendable, Equatable {
 
     /// Creates permissions from table and row identifiers.
     ///
+    /// Explicit so the memberwise initializer is not public.
+    ///
     /// - Parameters:
     ///   - dboID: Table identifier.
     ///   - rowID: Row identifier.
-    public init(dboID: Int, rowID: Int) {
+    init(dboID: Int, rowID: Int) { // swiftlint:disable:this unneeded_synthesized_initializer
         self.dboID = dboID
         self.rowID = rowID
     }

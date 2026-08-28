@@ -26,6 +26,13 @@ let package = Package(
             swiftSettings: [
                 .unsafeFlags(["-warnings-as-errors"])
             ]
+        ),
+        .testTarget(
+            name: "XanoRealtimeAPIValidator",
+            dependencies: ["XanoRealtime"],
+            swiftSettings: [
+                .unsafeFlags(["-warnings-as-errors"])
+            ]
         )
     ]
 )

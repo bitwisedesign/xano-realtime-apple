@@ -16,8 +16,9 @@ public enum RealtimeEvent: Sendable, Equatable {
     case history(JSONValue)
     /// Transport, decode, or server error.
     case error(XanoRealtimeError)
-    /// Uninterpreted envelope (`event`, `join`, `leave`, or unknown actions).
-    case raw(RealtimeEnvelope)
+    /// Uninterpreted wire action (`event`, `join`, `leave`, unknown, or a
+    /// `connection_status` payload the SDK did not recognize).
+    case unhandled(action: String, payload: JSONValue?)
 }
 
 /// Application message delivered on a channel.
@@ -26,22 +27,29 @@ public struct RealtimeMessage: Sendable, Equatable {
     public var payload: JSONValue
     /// Sender identity when the server included one.
     public var sender: RealtimePeer?
-    /// Envelope options (channel, socket, authenticated).
-    public var options: RealtimeActionOptions?
+    /// Channel name from the envelope options, when present.
+    public var channel: String?
+    /// Target peer socket identifier from the envelope options, when present.
+    public var socketId: String?
+    /// Whether the server marked the message as authenticated-only.
+    public var authenticated: Bool?
 
     /// Creates a message event payload.
     ///
     /// - Parameters:
     ///   - payload: Message body.
     ///   - sender: Optional sender identity.
-    ///   - options: Optional envelope options.
-    public init(
+    ///   - options: Optional envelope options copied onto ``channel``, ``socketId``,
+    ///     and ``authenticated``.
+    init(
         payload: JSONValue,
         sender: RealtimePeer? = nil,
         options: RealtimeActionOptions? = nil
     ) {
         self.payload = payload
         self.sender = sender
-        self.options = options
+        self.channel = options?.channel
+        self.socketId = options?.socketId
+        self.authenticated = options?.authenticated
     }
 }
