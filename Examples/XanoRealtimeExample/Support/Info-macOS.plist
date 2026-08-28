@@ -18,8 +18,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>UILaunchScreen</key>
-	<dict/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
 	<key>XanoInstanceHost</key>
 	<string>$(XANO_INSTANCE_HOST)</string>
 	<key>XanoConnectionCanonical</key>
