@@ -1,0 +1,8 @@
+---
+alwaysApply: true
+---
+## 🚫 Git Command Restrictions
+
+**NEVER** use the `git add` command under any circumstances.
+
+All file staging must be done by the user, not through manual git commands.

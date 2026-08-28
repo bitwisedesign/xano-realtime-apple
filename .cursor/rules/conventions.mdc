@@ -1,0 +1,26 @@
+---
+description: Always-on project conventions for the open-source iOS + macOS SDK.
+alwaysApply: true
+---
+## Project Conventions
+
+This repo is an open-source iOS + macOS SDK. It is not an app and not a server.
+
+### Scope
+- SDK / library code only — not an iOS or macOS UI app.
+- Do not introduce UIKit, SwiftUI, AppKit, Core Data, CloudKit, or localization/string-catalog patterns unless explicitly requested.
+- Prefer APIs available on both iOS and macOS. Flag or `#if` platform-only APIs. Do not require Linux portability.
+
+### Swift details
+File-scoped Swift rules live in `swift-conventions.mdc` (portability, `nil` vs `Type?.none`, access control) and `multi-core-concurrency.mdc` (concurrency). Follow those when editing `.swift` files.
+
+**`try?`:** forbidden except intentional best-effort (teardown / optional parse) where failure must not change control flow. Every `try?` needs an inline comment on that line (or immediately above) stating it is best-effort and why. Copying an uncommented sibling is a miss — see `swift-conventions.mdc`.
+
+**Zero-arg getters:** `func foo() -> T { stored }` must be a computed property (`var foo: T { stored }`). Actor `await` on a property is fine. Snapshot/I/O/mutating methods stay methods — see `swift-conventions.mdc`.
+
+### Testing details
+Test rules live in `testing.mdc`. Prefer Swift Testing (`@Test`, `#expect`, `#require`); do not use iOS wait helpers that are not present in this repo.
+
+### Configuration & secrets
+- Configure runtime settings via environment variables or config APIs — never hardcode credentials.
+- Prefer UTC for timestamps unless a rule explicitly requires otherwise.

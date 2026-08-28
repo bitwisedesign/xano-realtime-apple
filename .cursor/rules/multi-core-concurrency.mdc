@@ -1,0 +1,147 @@
+---
+description: Write Swift so independent work can run across CPU cores efficiently (Task/TaskGroup, no affinity hacks).
+globs: ["**/*.swift"]
+alwaysApply: false
+---
+# Multi-Core Efficient Concurrency
+
+This SDK may handle concurrent connections and messages on a client device. iOS and macOS will schedule runnable work onto available cores. The library does **not** implement CPU affinity — do not add pinning or custom thread pools.
+
+Agents must write domain and I/O code so independent units of work can execute concurrently and actually use those cores. Prefer modern Swift concurrency (`async`/`await`, `Task`, `TaskGroup`, `async let`, actors) over legacy GCD/completion-handler APIs. Non-concurrency Swift conventions live in `swift-conventions.mdc`.
+
+## Design for parallel units of work
+
+- Model connections, messages, and other independent operations as **independent, awaitable units** that can run side by side when they do not share mutable state.
+- Fan out independent work with `withTaskGroup` / `withThrowingTaskGroup` (or `async let` for a fixed small set), using a **configured maximum in-flight count** as the default. Do **not** add one child task per item unbounded, and do **not** process independent items strictly sequentially when there is no ordering or shared-state reason to serialize.
+- Keep each task’s critical section small. Prefer sharing state via `actor` or immutable `Sendable` values (see Actors below).
+- Prefer overlapping I/O (network, disk) with structured concurrency — awaiting one request must not block starting other independent requests when safe, subject to the same in-flight limit.
+- Prefer cancellation-aware work (`Task.checkCancellation()`, cooperative cancellation) on long-running operations. `Task.sleep` is fine for backoff/rate limits; do **not** use it in tests to wait for state changes (see `testing.mdc`).
+
+## Actors over `@unchecked Sendable` and `nonisolated(unsafe)`
+
+Default to an `actor` whenever a type holds mutable state that must be safe across concurrency domains (connections, caches, clients, coordinators, etc.).
+
+- **Require `actor`** unless it is demonstrably impossible (e.g. a type that must subclass a non-actor class, or must satisfy an API that forbids actors and cannot be wrapped).
+- Prefer immutable `struct` / `enum` values that are naturally `Sendable` when there is no shared mutable state.
+- **Do not** use `@unchecked Sendable` or `nonisolated(unsafe)` to silence the compiler. There is almost never a good reason for either here. SwiftLint rules `unchecked_sendable` and `nonisolated_unsafe` fail CI on new uses.
+- If something truly cannot be isolated without `nonisolated(unsafe)`, the only approved suppression is an immediately preceding `// swiftlint:disable:next nonisolated_unsafe` plus an adjacent rationale comment. Do not use a file-wide disable, and do not normalize this escape as a pattern. `@unchecked Sendable` still requires an explicit exception — do not add it “just in case.”
+- Do not use locks as the default shared-state mechanism when an `actor` or immutable `Sendable` design will do.
+
+## Do not serialize the cooperative pool
+
+`Task` / `TaskGroup` scheduling depends on isolation: **nonisolated** work typically runs on Swift’s cooperative **global concurrent executor**; **actor-isolated** work runs on that actor’s executor. Explicit executor preferences may influence where nonisolated work runs but do **not** guarantee it. Do not block or park **any** executor that must keep making forward progress with long synchronous CPU work or blocking I/O.
+
+- Prefer truly async I/O. For interruptible pure-compute on the pool, chunk the work and periodically `Task.checkCancellation()` + `await Task.yield()` so other tasks can run.
+- When a sync CPU-bound or blocking call is unavoidable from `Task` / `TaskGroup` code, bridge it **off** Swift’s executors: acquire a **configured async permit** before queueing, then wrap with `withCheckedThrowingContinuation` (or `withCheckedContinuation`) on a **dedicated private `DispatchQueue`**. Keep the permit held until the dispatched `compute()` work **actually exits** (or until it is known the work item will never start). Release from the `DispatchWorkItem` completion path (e.g. `defer` in the work item), **not** from the async continuation/`catch` path that may resume early on cancel/timeout. If cancel prevents a still-queued item from starting, release once from that cancel path instead — never release while `compute()` may still be running. Share synchronized bridge state between the continuation body and `withTaskCancellationHandler`’s `onCancel` so cancel can be recorded before work installation, cancel the `DispatchWorkItem` once attached, and resume cancellation at most once; keep **one-shot** completion so late `compute()` results are discarded. On cancel/timeout, cancel the queued `DispatchWorkItem` so not-yet-started work is skipped — note `DispatchWorkItem.cancel()` **cannot** interrupt `compute()` after it has started; rely on `shouldStop` / cooperative checks inside `compute` when possible. `await` that wrapper from the task/group child — do not call the blocking/sync API inline inside `group.addTask` / `Task { … }`.
+- Never block an async context with legacy sync waits (`DispatchSemaphore`, `Thread.sleep`, `group.wait()` on a queue, or `DispatchQueue.…sync` on the calling task).
+- Do not use `@MainActor` or UI-thread assumptions — this is a library, not an app; clients hop to the main actor.
+- Do **not** use `DispatchQueue.global().async` (or `.sync`) for new work — not for fan-out and not as the offload target. Use `Task` / `TaskGroup` for concurrency; use a dedicated private queue only inside the continuation bridge above.
+
+## Good vs bad shape
+
+```swift
+// GOOD — parallel independent work, capped by a configured max in-flight
+guard maxInFlight > 0 else {
+    throw MaxInFlightError.mustBePositive // never enter the group with ≤ 0
+}
+try await withThrowingTaskGroup(of: Void.self) { group in
+    var inFlight = 0
+    for message in messages {
+        if inFlight >= maxInFlight {
+            _ = try await group.next()
+            inFlight -= 1
+        }
+        let added = group.addTaskUnlessCancelled {
+            try await process(message)
+        }
+        guard added else { break } // stop scheduling when the group is cancelled
+        inFlight += 1
+    }
+    try await group.waitForAll()
+}
+```
+
+```swift
+// BAD — unbounded fan-out (one child task per message)
+try await withThrowingTaskGroup(of: Void.self) { group in
+    for message in messages {
+        group.addTask {
+            try await process(message)
+        }
+    }
+    try await group.waitForAll()
+}
+```
+
+```swift
+// BAD — forces one-at-a-time even when messages are independent
+for message in messages {
+    try await process(message)
+}
+```
+
+```swift
+// GOOD — shared bridge state for body + onCancel; permit until work exits; one-shot resume
+func heavySyncWork() async throws -> Answer {
+    await bridgePermits.acquire() // configured async limit before queueing
+    return try await withThrowingTaskGroup(of: Answer.self) { group in
+        group.addTask {
+            // Synchronized state shared by the operation body and onCancel (create BEFORE both).
+            let bridge = SyncBridgeState<Answer>()
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    // Record continuation; if cancel already recorded, resume cancel ≤ once and skip queue
+                    guard bridge.install(continuation) else { return }
+
+                    let work = DispatchWorkItem {
+                        defer {
+                            // release permit here — even if cancel/timeout already resumed
+                            bridgePermits.releaseFromWorkItem()
+                        }
+                        do {
+                            // cancel() does not stop compute once started; poll shouldStop
+                            bridge.resume(returning: try compute(shouldStop: { bridge.isCancelled }))
+                        } catch {
+                            bridge.resume(throwing: error) // no-op if already resumed
+                        }
+                    }
+                    // Attach may see prior cancel → cancel work, resume cancel ≤ once, skip async
+                    guard bridge.attach(work) else { return }
+                    dedicatedQueue.async(execute: work)
+                }
+            } onCancel: {
+                // Record cancel (safe before work exists); cancel DispatchWorkItem once attached;
+                // resume(CancellationError) at most once. Release permit HERE only if work never
+                // started; if compute is running, work-item defer releases after exit.
+                bridge.cancel()
+            }
+        }
+        group.addTask {
+            try await Task.sleep(for: timeout)
+            throw TimeoutError()
+        }
+        let answer = try await group.next()!
+        group.cancelAll() // do not leave the other child suspended on queued/running work
+        return answer
+    }
+}
+// From Task / TaskGroup: await heavySyncWork() — do not call compute() inline
+```
+
+
+```swift
+// BAD — blocks a cooperative-pool thread; starves other concurrent work
+DispatchQueue.global().sync {
+    heavyCompute()
+}
+```
+
+
+## What not to add
+
+Library code must stay correct and efficient on a client device. Do not saturate the device.
+
+- Do **not** add process-wide CPU affinity, core-count detection for pinning, or custom thread-pool APIs.
+- Do **not** derive `maxInFlight` (or invent queues/threads) from host core count to saturate the device — prefer a configured limit.
+- The dedicated private `DispatchQueue` inside a continuation bridge (above) is only for offloading unavoidable sync/blocking calls; it is **not** affinity, pinning, or a process-wide thread pool.
+- Do **not** treat unbounded fan-out as “more multi-core”; default to a configured in-flight limit.

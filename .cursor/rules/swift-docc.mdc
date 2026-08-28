@@ -1,0 +1,156 @@
+---
+alwaysApply: true
+---
+## 🧭 Cursor Rules: Swift DocC Comments
+
+### 🎯 Purpose
+Generate documentation for Swift files that third-party integrators of this open-source SDK will read.
+Prioritize accuracy, succinctness, and how to use the API.
+
+---
+
+### 🧩 General Rules
+
+- Always use **triple-slash (`///`) doc comments**, never block comments (`/** ... */`).
+- Document **every public or internal**:
+  - class, struct, enum, protocol, extension, actor
+  - initializer
+  - function
+  - stored or computed property
+- **Never** add DocC comments to functions annotated with `@Test`. The `@Test` display name string is the test's documentation. If something important about the test needs to be communicated (setup rationale, non-obvious assertions, known caveats), use a plain `//` comment placed inline near the relevant code inside the function body.
+- Write in a **neutral, explanatory tone**.
+- Use **DocC markdown structure**, including:
+  - `- Parameters:`
+  - `- Returns:`
+  - `- Throws:`
+  - `- Note:` / `- Warning:` / `- Precondition:`
+- Focus on:
+  - What the symbol does
+  - Why it exists (briefly)
+  - How to use it (public API)
+  - Preconditions, side effects, or failure conditions
+- Avoid:
+  - Implementation details or restating obvious Swift semantics
+  - Marketing or descriptive fluff
+- **Usage examples:** welcome on **public** API (connect, subscribe, handle errors). **Internal** symbols stay example-free — purpose, preconditions, and side effects only.
+
+---
+
+### 🧱 Formatting & Style
+
+- Keep summaries **one sentence**, followed by an optional detailed paragraph.
+- Insert blank lines (`///`) between logical sections for **visual spacing**.
+- Prefer concise phrasing (no “This function will…” — just “Loads data…”).
+- Use **section markers** to group code for readability:
+  ```swift
+  // MARK: - Initialization
+  // MARK: - Private Helpers
+  // MARK: - Public API
+  ```
+
+---
+
+### 📍 Attribute Placement
+
+When a property or declaration has attributes (e.g. `@available`, `@discardableResult`), place DocC comments **above all attributes**, not between them.
+
+**Correct:**
+```swift
+/// Token used to authenticate the realtime connection.
+@available(iOS 16, macOS 13, *)
+public var token: String
+```
+
+**Incorrect:**
+```swift
+@available(iOS 16, macOS 13, *)
+/// Token used to authenticate the realtime connection.
+public var token: String
+```
+
+---
+
+### 🪶 Auto Section Insertion
+
+When creating or editing Swift files, automatically insert `MARK:` headers to organize code.
+
+Recommended order:
+```swift
+// MARK: - Properties
+// MARK: - Initialization
+// MARK: - Lifecycle
+// MARK: - Public API
+// MARK: - Private Helpers
+// MARK: - Extensions
+```
+
+Rules:
+- Insert `// MARK: - Properties` before stored or computed properties.
+- Insert `// MARK: - Initialization` before `init` methods.
+- Insert `// MARK: - Public API` before public functions.
+- Insert `// MARK: - Private Helpers` before private functions.
+- Insert `// MARK: - Extensions` before extension blocks.
+
+---
+
+### 🧪 Examples
+
+#### Public type (examples welcome)
+
+```swift
+/// A realtime connection to the backend.
+///
+/// Create one client per session and call `connect()` before subscribing.
+///
+/// ```swift
+/// let client = RealtimeClient(configuration: config)
+/// try await client.connect()
+/// ```
+public struct RealtimeClient { ... }
+```
+
+#### Public function (examples welcome)
+
+```swift
+/// Connects to the realtime backend.
+///
+/// - Parameters:
+///   - token: Credential accepted by the backend.
+/// - Throws: An error if the handshake fails.
+///
+/// ```swift
+/// try await client.connect(token: token)
+/// ```
+public func connect(token: String) async throws
+```
+
+#### Internal symbol (no usage example)
+
+```swift
+/// Decodes one inbound frame into a `Message`.
+///
+/// - Parameter data: Raw WebSocket payload.
+/// - Returns: The decoded message.
+/// - Throws: An error if the payload is not valid JSON for `Message`.
+func decodeMessage(from data: Data) throws -> Message
+```
+
+#### Function with Preconditions
+```swift
+/// Subscribes to events on a channel.
+///
+/// - Precondition: `connect()` must have succeeded.
+/// - Parameter channel: Channel name as issued by the backend.
+public func subscribe(to channel: String) async throws
+```
+
+---
+
+### 🧠 Behavior in Cursor
+
+When generating or editing documentation in Swift files:
+
+1. Use the above structure automatically for each symbol.
+2. Preserve existing comments unless they violate the style.
+3. Generate consistent spacing and section headers.
+4. Add usage examples on public API; omit them on internal symbols.

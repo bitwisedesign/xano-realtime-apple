@@ -1,0 +1,138 @@
+---
+description: Swift coding conventions for the iOS + macOS SDK.
+globs: ["**/*.swift"]
+alwaysApply: true
+---
+## Swift Code Conventions
+
+This project is an open-source iOS + macOS SDK. Prefer portable library patterns — not UIKit/SwiftUI, Core Data, or app-lifecycle APIs.
+
+### Swift Concurrency
+
+All Swift concurrency guidance (structured concurrency, multi-core fan-out, executors, continuation bridges, actors / `Sendable`) lives in `multi-core-concurrency.mdc`. Follow that rule when editing concurrent code. For `Task.sleep` in tests, see `testing.mdc`.
+
+### Do not assume diagnostics
+
+Do **not** preemptively silence compiler or SwiftLint issues you have not actually seen from `swift build`, `swift test`, or `swiftlint` on the current code.
+
+Forbidden without a reproduced diagnostic:
+- `_ = someParam` / similar discards “just in case”
+- `// swiftlint:disable` / `disable:next` “just in case”
+- Other no-op shims whose only purpose is to quiet a hypothetical warning
+
+Write the straightforward code. If a tool reports a real issue, fix that issue. Prefer a real use of the value or an API change over a discard/silence hack.
+
+### Do not swallow errors with `try?`
+
+Prefer `try` so failures propagate to the caller (or a deliberate `catch` that maps them to a domain error).
+
+Do **not** use `try?` to ignore errors by default. Only use `try?` (or an empty/`_ = try?` pattern) when the operation is intentionally **best-effort** and failure must not affect control flow — for example teardown/close on a path that is already failing, or optional cleanup where the primary outcome is already decided.
+
+When `try?` is used for best-effort, put an **inline comment** on that line (or immediately above it) stating that it is best-effort and any extra context needed to understand why swallowing the error is acceptable. Keep the use local and short-lived. Do not hide failures that the user or caller needs to know about (config load, connect, decode, public API).
+
+**Copying an uncommented `try?` from a sibling file is not compliance.** Older snippets that omit the comment are stale.
+
+### Platform Portability (iOS + macOS)
+
+- Prefer APIs available on both iOS and macOS. Flag or `#if` iOS-only or macOS-only APIs.
+- Use portable path/env handling (`FileManager`, URL path APIs, environment variables) — do not hardcode machine-specific paths.
+- Prefer UTF-8 and explicit time zones (usually UTC) for timestamps; do not rely on the host locale/timezone.
+- Keep secrets and connection settings in environment/config — never hardcode credentials.
+
+### Use `nil` instead of `Type?.none`
+
+Always use the literal `nil` to represent an absent optional value. Do **not** write `UUID?.none`, `Optional<Foo>.none`, or similar forms when `nil` would compile.
+
+**Do:**
+```swift
+var connectionID: UUID? = nil
+return makeClient(for: nil)
+
+if let value = maybeValue {
+    // ...
+} else {
+    return nil
+}
+```
+
+**Don't:**
+```swift
+var connectionID: UUID? = UUID?.none
+return makeClient(for: UUID?.none)
+return Optional<Message>.none
+```
+
+**Why `nil`?**
+- Shorter and immediately recognizable as "no value."
+- `Type?.none` adds noise and can be confused with a domain enum case named `none`.
+
+**Narrow, valid exceptions** — prefer `nil as Type?` over `Type?.none`:
+
+1. **Disambiguating overloads.**
+   ```swift
+   foo(nil as Int?)        // preferred
+   foo(Int?.none)          // avoid
+   ```
+2. **Generic contexts where the type cannot be inferred.**
+   ```swift
+   return nil as T?        // preferred
+   return T?.none          // avoid
+   ```
+3. **Pattern matching is not an exception.** `case .none:` / `case .some(let x):` in a `switch` is fine.
+
+### Prefer named types over tuples
+
+Do **not** use tuples for project-owned return values, stored state, or public/internal APIs. Define a named `struct` / `enum` (with `Sendable` / `Equatable` when appropriate) instead — e.g. `ConnectionIdentity` rather than `(name: String, id: Int)`.
+
+**Do:**
+```swift
+public struct ConnectionIdentity: Sendable, Equatable {
+    public var name: String
+    public var id: Int
+}
+
+public static func resolveConnectionIdentity(...) throws -> ConnectionIdentity
+```
+
+**Don't:**
+```swift
+public static func resolveConnectionIdentity(...) throws -> (name: String, id: Int)
+```
+
+**Only exception:** an external API you must call or conform to already uses tuples (SDK, protocol requirement, system framework). Do not invent tuples for convenience, temporary grouping, or “small” multi-value returns.
+
+### Omit redundant `internal`
+
+`internal` is the default access level in Swift. Do **not** spell it out in new or AI-generated code where it is redundant.
+
+**Do:**
+```swift
+var name: String { ... }
+```
+
+**Don't:**
+```swift
+internal var name: String { ... }
+```
+
+When editing existing code, prefer dropping explicit `internal` if you are already touching that declaration.
+
+### Prefer computed properties over zero-argument getters
+
+A `func foo() -> T` that only returns stored (or trivially derived) state **must** be a computed property. Actor isolation still requires `await` on the property; that is not a reason to keep a method.
+
+**Do:**
+```swift
+var writeCount: Int { acceptedWrites }
+var isStopped: Bool { stopped }
+await flag.isStopped
+```
+
+**Don't:**
+```swift
+func writeCount() -> Int { acceptedWrites }
+func isStopped() -> Bool { stopped }
+await flag.isStopped()
+```
+
+Keep a method when the call does work: I/O, mutation, throws, or building a snapshot (e.g. `allRows()` that sorts a dictionary). Copying an existing `func loads() -> Int { loadCount }` sibling is not compliance.

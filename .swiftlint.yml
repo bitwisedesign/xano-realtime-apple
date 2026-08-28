@@ -1,0 +1,51 @@
+excluded:
+  - .build
+  - DerivedData
+
+disabled_rules:
+  - type_body_length
+  - file_length
+  - inclusive_language
+  - line_length
+  - type_name
+  - comment_spacing
+  - xctfail_message
+  - todo
+  - function_parameter_count
+  - cyclomatic_complexity
+  - function_body_length
+
+opt_in_rules:
+  - sorted_imports
+
+strict: true
+
+nesting:
+  type_level:
+    warning: 3
+    error: 3
+
+large_tuple:
+  warning: 2
+  error: 2
+
+identifier_name:
+  min_length:
+    warning: 3
+    error: 2
+  max_length:
+    warning: 60
+    error: 70
+  excluded: ["x", "y", "z", "i", "j", "k", "nc", "vc", "μ", "σ", "Δ", "λ0", "N0", "dx", "dy", "dz", "to", "at", "me", "id", "it", "ok", "in", "up", "no", "on", "end", "p0", "p1", "p2", "p3"]
+
+custom_rules:
+  unchecked_sendable:
+    name: "Unchecked Sendable"
+    regex: "@unchecked\\s+Sendable"
+    message: "Do not use @unchecked Sendable; use an actor (or ask for an explicit exception)."
+    severity: error
+  nonisolated_unsafe:
+    name: "nonisolated(unsafe)"
+    regex: "nonisolated\\s*\\(\\s*unsafe\\s*\\)"
+    message: "Do not use nonisolated(unsafe); isolate the state or ask for an explicit exception."
+    severity: error

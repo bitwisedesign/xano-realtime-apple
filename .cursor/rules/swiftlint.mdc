@@ -1,0 +1,31 @@
+---
+description: SwiftLint requirements and troubleshooting for generated Swift code.
+alwaysApply: true
+---
+
+# SwiftLint
+
+Generated Swift code must avoid common project lint failures:
+- Variables must be at least 3 characters long unless they are defined as exceptions within `.swiftlint.yml`.
+- Never force-cast.
+- Never introduce `@unchecked Sendable` or `nonisolated(unsafe)`; SwiftLint custom rules `unchecked_sendable` and `nonisolated_unsafe` enforce this (use an actor / isolate the state). The only approved `nonisolated(unsafe)` exception is an immediately preceding `// swiftlint:disable:next nonisolated_unsafe` plus an adjacent rationale comment.
+
+## Running SwiftLint
+
+**Always run SwiftLint from this repository's checkout root** (the directory that contains `.swiftlint.yml`) using the Shell tool's `working_directory` parameter. SwiftLint discovers `.swiftlint.yml` by walking up from the current working directory — running from a sibling repo or a consumer app checkout will silently use the wrong config or no config at all, producing incorrect violations and missing real ones.
+
+After modifying any `*.swift` file, run SwiftLint autofix for the edited files. Pass **absolute paths** derived from that checkout root (resolve each edited file under the repo root; do not hardcode another machine's path):
+
+```bash
+swiftlint --fix --no-cache /absolute/path/to/checkout/path/to/File1.swift /absolute/path/to/checkout/path/to/File2.swift
+```
+
+If autofix alone is not enough, run check mode as a **separate** command (never chain with `&&`):
+
+```bash
+swiftlint --quiet --no-cache /absolute/path/to/checkout/path/to/File1.swift /absolute/path/to/checkout/path/to/File2.swift
+```
+
+**Do not chain SwiftLint commands.** Run `--fix` and `--quiet` as separate shell invocations. Chaining (`swiftlint --fix ... && swiftlint --quiet ...`) wastes time when the first step finishes quickly but the combined command keeps the shell open.
+
+If SwiftLint behaves unexpectedly, check that `swiftlint` is installed and visible in `PATH`, confirm the file is not excluded by config, and rerun with `--no-cache` before debugging cache state.

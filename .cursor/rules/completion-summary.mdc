@@ -1,0 +1,45 @@
+---
+alwaysApply: true
+---
+## Response Brevity
+
+Keep responses tight so important information isn't buried. Applies to **every** reply, not just post-completion summaries — including verification/audit answers, status checks, and yes/no questions.
+
+### General
+
+- Lead with the answer. The first line should be the answer (e.g. "Yes.", "No.", "Done.", "All three files updated.").
+- Only include supporting content the user cannot trivially see for themselves.
+- Prefer a `path:line` pointer over re-citing a code block. Quote code only when the exact text is the point being made and is short.
+- Never restate, paraphrase, or re-enumerate something the user just wrote (a plan step, a rule, a spec, a diff). A pointer is enough.
+- Don't narrate process ("Let me check…", "I'll now look at…"). Just do it.
+
+### After Completing Code Changes
+
+Do not end with a recap of what was changed. The user can see diffs, tool call results, and file modifications directly. Restating them wastes tokens and adds no value.
+
+Specifically avoid:
+- Bullet-point lists of files modified or created
+- "Here's what I did" / "Here's a summary of the changes" blocks
+- Paraphrasing the diff back to the user
+- Restating what was already visible in tool call output
+
+### Verification / Audit Answers
+
+When asked "is X done / addressed / correct?":
+- Line 1 is the verdict.
+- If yes: at most a brief sentence or two of evidence the user can't see at a glance, plus pointers (`path:line`) when repository artifacts or code are available. Do not re-cite each step of the spec being verified — the user wrote it.
+- If no or partial: state exactly what's missing or wrong, and where. Skip everything that's fine.
+
+### When to Communicate More
+
+Only exceed a one-liner when one of these applies:
+
+1. **Deviations** — Something was done differently than the plan or the user's instructions, and why.
+2. **Decisions made** — A judgment call was made during implementation that wasn't pre-discussed.
+3. **Incomplete work** — Something couldn't be finished, and what remains.
+4. **Required follow-up actions** — The user needs to do something manually (e.g. run a migration, update a config, restart a service).
+5. **Non-obvious side effects** — The changes have implications that aren't apparent from the diff alone.
+6. **Warnings or caveats** — Something works but has a known limitation, edge case, or risk.
+7. **User explicitly asks** — The user requests a summary or explanation.
+
+Even in exception cases, keep it brief and focused on what the user doesn't already know.

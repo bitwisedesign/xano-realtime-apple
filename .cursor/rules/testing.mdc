@@ -1,0 +1,70 @@
+---
+description: Swift Testing conventions for the iOS + macOS SDK.
+alwaysApply: true
+---
+## Swift Testing Conventions
+
+When creating or modifying unit tests for this iOS + macOS SDK, follow these guidelines:
+
+### Running tests
+
+After creating or editing tests, run `swift test` from this repository's checkout root. When production Swift also changed, run the two `swift build` commands in `general.mdc` as well. Do not invoke `xcodebuild test` unless asked.
+
+### Framework & Style
+- Use the modern `Testing` APIs (`@Test`, `#expect`, `#require`) — not XCTest.
+- Use descriptive test names: `@Test("reconnects after the server closes the socket")`.
+- **Never force-unwrap** (`!`, `as!`, `try!`) in tests — use `try #require(...)` instead.
+  - Any test that calls `try #require` must be `throws`: `func myTest() throws { ... }`.
+  - This applies to UUID fixtures, optional unwrapping, and any failable initializer.
+  ```swift
+  // ✅
+  func correctPath() throws {
+      let uuid = try #require(UUID(uuidString: "A1B2C3D4-E5F6-7890-ABCD-EF1234567890"))
+  }
+  // ❌
+  func correctPath() {
+      let uuid = UUID(uuidString: "A1B2C3D4-E5F6-7890-ABCD-EF1234567890")!
+  }
+  ```
+- Name fixtures and locals after the **production API**. Keep `@Test` display names aligned with those names.
+- On every test file you modify, run `swiftlint --fix --no-cache` with that file’s absolute path as a **positional** argument under this repository’s checkout root, using the Shell tool’s `working_directory` set to that root (see `.cursor/rules/swiftlint.mdc`). Then run `swiftlint --quiet --no-cache` the same way as a **separate** command.
+
+### Async & Waiting
+- **Do not use `Task.sleep` (or `try? await Task.sleep`) to wait for state changes.** That is flaky.
+- Prefer deterministic patterns instead:
+  - Assert on completed `async` results / `async let` join directly when the work under test finishes.
+  - One-shot **checked continuations** (or small test gates that resume a waiter from `open()` / a callback) when coordinating producer/consumer in the test.
+  - Inject **clocks / fakes** when the production code’s timing is under test.
+- **Every wait for a side effect must be bounded and cancellation-aware.** Continuations that resume only when a callback fires (e.g. `discardLateResult`, `onTimeout`) must fail with a clear error if the callback never runs — use `ContinuousClock` + `withThrowingTaskGroup` (or equivalent), clear the pending continuation on cancel, and default the bound to **≥ 2 seconds** on CI. Unbounded `withCheckedContinuation` waiters are not allowed.
+- Polling helpers that sleep until a condition becomes true are discouraged for the same reason; if a deadline is unavoidable, prefer `ContinuousClock` with a clear timeout error (**≥ 2 seconds** on CI) over `Task.sleep` loops that discard cancellation.
+- Do not invent project-specific wait helpers unless they already exist in this repo.
+- `Task.sleep` is only acceptable when the **subject under test** requires a real delay (for example asserting a timeout API), not as a substitute for observing state.
+
+### Timing tests (timeout / late-result APIs)
+- Production timeout arguments under test must be **≥ 2 seconds** (CI slack). Do not use 1s (or shorter) timeout windows.
+- When an operation must lose the race to a timeout, its delay must be **safely longer** than that timeout (clear margin, e.g. timeout 2s → delay ≥ 4s). Keep `#expect` timedOut payloads and elapsed-time bounds aligned with the chosen values.
+- Wall-clock delays that must **ignore Task cancellation** (simulating non-cancellable I/O) must use `DispatchQueue.asyncAfter` on a **dedicated private serial queue** (`DispatchQueue(label:)`), never `DispatchQueue.global()`. Resume a checked continuation from that queue.
+
+### Dispatch in tests
+- **Never** use `DispatchQueue.global()` (or `.global(qos:)`) in tests. Use a file-private or test-local `DispatchQueue(label: "…")` so work is isolated and review bots do not flag shared concurrent pools.
+
+### Coverage expectations
+- When production code validates inputs, add at least one test that invalid values are rejected through the **public** API path (do not rely only on happy-path fixtures that skip validation).
+- Prefer covering production waiters / real implementations when practical; if a test double is used, do not treat that as coverage of the production path’s concurrency or ordering.
+
+### Error Handling
+- Let errors propagate — tests should `throw`, not catch or use `try?`.
+- For testing specific throws, use `#expect(throws:) {}` and verify the exact error.
+
+### Mocks & Dependencies
+- Prefer small, local fakes/stubs defined next to the tests over large shared mock frameworks.
+- Keep mocks focused on the protocol/surface under test.
+- Do not assume iOS/app testing kits (`GolfEngineTesting`, view-model monitors, etc.) exist here.
+
+### Fixtures
+- Always clean up fixtures the test creates.
+- Use deterministic fixtures (failed connects, decode errors, dropped messages, idle timeouts) rather than timing-based checks.
+
+### Disabled Tests
+- If a test is disabled, assume it is intentional — do not suggest re-enabling it unless asked.
+- Tests are not required to have DocC or other documentation.

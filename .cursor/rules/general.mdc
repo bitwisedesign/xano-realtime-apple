@@ -1,0 +1,35 @@
+---
+alwaysApply: true
+---
+These are general rules to follow:
+- After adding or changing Swift code, run all three commands in [Building](#building) from this repository's checkout root. Do not run `xcodebuild` unless the user asks or a command file explicitly requires it.
+- Tests do not require extra permission beyond the unsandboxed shell needed for `swift` itself. After creating or editing tests, run `swift test` from the repo root (and the two `swift build` commands when production Swift changed). Do not invoke `xcodebuild test` unless asked.
+- When creating new files, don't add "Created by Cursor". It should be created by whoever the user is. Cursor does not own our intellectual property and cannot be presumed in any way to be the owner.
+- Preserve all pre-existing comments during refactors unless they are factually incorrect due to the changes being made. Never remove or "clean up" comments unless explicitly asked to do so.
+- When migrating or refactoring code, preserve the original API shape (e.g. `init` vs `static func`) unless there is a concrete technical reason to change it. Do not introduce unnecessary API style changes.
+- All Xcode projects in this workspace use `fileSystemSynchronizedGroups`, which means Xcode automatically discovers source files from the filesystem directory structure. When adding new `.swift` files to a framework or target, you do **not** need to manually edit `project.pbxproj` to add `PBXBuildFile` or `PBXFileReference` entries — simply placing the file in the correct directory is sufficient.
+
+## Building
+
+These `swift build` / `swift test` invocations need an unsandboxed shell. Xcode SDK paths and Swift plugin servers fail under sandbox restrictions.
+
+macOS:
+
+```
+swift build
+```
+
+iOS simulator — derive the iOS version from the installed SDK. Do **not** hardcode `26.1`.
+
+```
+IOS_SIM_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')
+swift build \
+  --sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+  --triple "arm64-apple-ios${IOS_SIM_VERSION}-simulator"
+```
+
+Then run tests on the Mac host:
+
+```
+swift test
+```
