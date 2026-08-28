@@ -19,6 +19,8 @@ dependencies: [
 
 Then add the `XanoRealtime` product to your target.
 
+`0.x` releases may include breaking API changes. See [VERSIONING.md](VERSIONING.md) for the 0.x pin and how to constrain the range.
+
 ## Quick start
 
 ```swift
@@ -68,6 +70,7 @@ for await event in await lobby.events {
 - [Protocol reference](docs/ProtocolReference.md)
 - [Reconnection and heartbeats](docs/Reconnection.md)
 - [Foreground / background](docs/Lifecycle.md)
+- [Versioning policy](VERSIONING.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## License
