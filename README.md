@@ -3,6 +3,7 @@
 A native Swift SDK for [Xano Realtime](https://docs.xano.com/) on Apple platforms. Xano does not ship an official Apple SDK; this package speaks the same WebSocket protocol as the [official JavaScript SDK](https://github.com/xano-inc/js-sdk).
 
 **Platforms:** iOS 16+, macOS 13+  
+**Swift:** tools 6.0+ (Xcode 16+)  
 **Transport:** `URLSessionWebSocketTask` (no Starscream or other socket libraries)  
 **Concurrency:** Swift actors + `AsyncStream`
 
@@ -26,7 +27,7 @@ import XanoRealtime
 let configuration = XanoRealtimeConfiguration(
     instanceBaseUrl: URL(string: "https://x8ki-letl-twmt.n7.xano.io")!,
     connectionCanonical: "YOUR_CONNECTION_CANONICAL",
-    realtimeAuthToken: jwt // optional; sent as the WebSocket subprotocol
+    realtimeAuthToken: "YOUR_JWT_AUTH_TOKEN" // optional; sent as the WebSocket subprotocol
 )
 
 let client = XanoRealtimeClient(configuration: configuration)

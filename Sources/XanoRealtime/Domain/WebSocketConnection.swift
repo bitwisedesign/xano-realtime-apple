@@ -364,26 +364,29 @@ actor WebSocketConnection: WebSocketLifecycleSink {
     /// Writes queued envelopes in insertion order after reconnect.
     ///
     /// Drains ``offlineQueue`` itself so envelopes appended during a suspended
-    /// write are sent before the socket is marked connected. A transport failure
-    /// stops the flush and puts the failed envelope back at the front, leaving
-    /// any not-yet-written envelopes (including those appended during the write)
-    /// on the queue for the next reconnect. Encoding failures are reported and
-    /// skipped so they cannot block the queue.
+    /// write are sent before the socket is marked connected. A non-encoding write
+    /// failure requeues the envelope and enters ``handleTransportFailure(code:)``
+    /// so `webSocketDidOpen` does not mark the socket connected. An unknown close
+    /// code is mapped to ``WebSocketCloseCode/abnormalClosure``. Encoding failures
+    /// are reported and skipped so they cannot block the queue.
     private func flushOfflineQueue() async {
         while !offlineQueue.isEmpty {
             let envelope = offlineQueue.removeFirst()
             do {
                 try await write(envelope)
             } catch let error as XanoRealtimeError {
-                eventsContinuation.yield(.failure(error))
                 if case .encodingFailed = error {
+                    eventsContinuation.yield(.failure(error))
                     continue
                 }
                 offlineQueue.insert(envelope, at: 0)
+                let code = lastCloseCode == .unknown ? .abnormalClosure : lastCloseCode
+                await handleTransportFailure(code: code)
                 return
             } catch {
-                eventsContinuation.yield(.failure(.connectionClosed(code: lastCloseCode)))
                 offlineQueue.insert(envelope, at: 0)
+                let code = lastCloseCode == .unknown ? .abnormalClosure : lastCloseCode
+                await handleTransportFailure(code: code)
                 return
             }
         }

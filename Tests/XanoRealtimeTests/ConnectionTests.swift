@@ -154,9 +154,9 @@ func offlineQueuePreservesUndeliveredOnWriteFailure() async throws {
     try await connection.connect()
     let firstTask = try #require(await provider.latestTask)
     await firstTask.setSendError(XanoRealtimeError.connectionClosed(code: .abnormalClosure))
+    await provider.setAutoOpenOnResume(true)
     await firstTask.simulateOpen()
 
-    _ = try await states.wait(matching: { $0 == .connected })
     let failure = try await events.wait { event in
         if case .failure = event {
             return true
@@ -164,18 +164,15 @@ func offlineQueuePreservesUndeliveredOnWriteFailure() async throws {
         return false
     }
     if case .failure(let error) = failure {
-        #expect(error == .connectionClosed(code: .unknown))
+        #expect(error == .connectionClosed(code: .abnormalClosure))
     } else {
         Issue.record("Expected a transport failure")
     }
     #expect(try await firstTask.sentEnvelopes.isEmpty)
+    #expect(await firstTask.cancelCode == .abnormalClosure)
+    _ = try await states.wait(matching: { $0 == .connected })
 
-    let afterFailedFlush = await states.all.count
-    await provider.setAutoOpenOnResume(true)
-    await firstTask.setSendError(nil)
-    await firstTask.simulateClose(code: .abnormalClosure)
-    _ = try await states.wait(after: afterFailedFlush, matching: { $0 == .connected })
-
+    #expect(await provider.tasks.count >= 2)
     let secondTask = try #require(await provider.latestTask)
     let sent = try await secondTask.sentEnvelopes
     #expect(sent.map(\.payload) == [first.payload, second.payload])
