@@ -181,7 +181,7 @@ struct ConfigurationValuesView: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            Form {
                 configurationRow(title: "XANO_INSTANCE_HOST", value: snapshot.instanceHost)
                 configurationRow(title: "XANO_CONNECTION_CANONICAL", value: snapshot.connectionCanonical)
                 configurationRow(
@@ -190,6 +190,10 @@ struct ConfigurationValuesView: View {
                     showLength: true
                 )
             }
+            #if os(macOS)
+            .frame(minWidth: 440, minHeight: 260)
+            .padding()
+            #endif
             .navigationTitle("Configuration")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
