@@ -148,16 +148,16 @@ extension RealtimeEnvelope {
         case .error:
             return .error(.server(payload ?? .null))
         case .event, .join, .leave, .unknown:
-            return .raw(self)
+            return .unhandled(action: action.rawValue, payload: payload)
         }
     }
 
     /// Converts a `connection_status` payload into a connected or disconnected event.
     ///
-    /// - Returns: Mapped event, or ``RealtimeEvent/raw(_:)`` when the payload is not recognized.
+    /// - Returns: Mapped event, or ``RealtimeEvent/unhandled(action:payload:)`` when the payload is not recognized.
     private func connectionStatusEvent() -> RealtimeEvent {
         guard let payload else {
-            return .raw(self)
+            return .unhandled(action: action.rawValue, payload: nil)
         }
         do {
             let decoded = try payload.decode(as: ConnectionStatusPayload.self)

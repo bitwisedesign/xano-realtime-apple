@@ -15,7 +15,7 @@ public struct RealtimePeer: Codable, Sendable, Equatable {
     ///   - socketId: Server-assigned socket identifier.
     ///   - extras: Extra claims from the auth token.
     ///   - permissions: Table and row identity.
-    public init(
+    init(
         socketId: String,
         extras: [String: JSONValue] = [:],
         permissions: RealtimePermissions

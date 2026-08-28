@@ -132,8 +132,6 @@ public struct ChannelOptions: Sendable, Equatable {
     public var history: Bool
     /// Request presence snapshots and updates.
     public var presence: Bool
-    /// Queue this channel's outbound actions while disconnected.
-    public var queueOfflineActions: Bool
     /// Request history automatically after returning to the foreground.
     public var catchUpOnForeground: Bool
 
@@ -142,17 +140,14 @@ public struct ChannelOptions: Sendable, Equatable {
     /// - Parameters:
     ///   - history: Request history. Defaults to `false`.
     ///   - presence: Request presence. Defaults to `false`.
-    ///   - queueOfflineActions: Queue sends while offline. Defaults to `false`.
     ///   - catchUpOnForeground: Request history after `enterForeground()`. Defaults to `false`.
     public init(
         history: Bool = false,
         presence: Bool = false,
-        queueOfflineActions: Bool = false,
         catchUpOnForeground: Bool = false
     ) {
         self.history = history
         self.presence = presence
-        self.queueOfflineActions = queueOfflineActions
         self.catchUpOnForeground = catchUpOnForeground
     }
 }

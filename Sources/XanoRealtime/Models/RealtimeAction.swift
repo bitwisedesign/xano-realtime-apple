@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Unknown future actions decode as ``unknown(_:)`` so the SDK stays
 /// forward-compatible with server additions.
-public enum RealtimeAction: Sendable, Hashable {
+enum RealtimeAction: Sendable, Hashable {
     /// Socket open or close status (`connection_status`).
     case connectionStatus
     /// Server-reported error (`error`).
@@ -27,7 +27,7 @@ public enum RealtimeAction: Sendable, Hashable {
     case unknown(String)
 
     /// Canonical wire string for this action.
-    public var rawValue: String {
+    var rawValue: String {
         switch self {
         case .connectionStatus: return "connection_status"
         case .error: return "error"
@@ -45,7 +45,7 @@ public enum RealtimeAction: Sendable, Hashable {
     /// Creates an action from a wire string, using ``unknown(_:)`` for unrecognized values.
     ///
     /// - Parameter rawValue: Action string from a JSON envelope.
-    public init(rawValue: String) {
+    init(rawValue: String) {
         switch rawValue {
         case "connection_status": self = .connectionStatus
         case "error": self = .error
@@ -62,12 +62,12 @@ public enum RealtimeAction: Sendable, Hashable {
 }
 
 extension RealtimeAction: Codable {
-    public init(from decoder: Decoder) throws {
+    init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         self.init(rawValue: try container.decode(String.self))
     }
 
-    public func encode(to encoder: Encoder) throws {
+    func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
     }

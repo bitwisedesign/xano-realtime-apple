@@ -73,9 +73,41 @@ See [docs/Architecture.md](docs/Architecture.md).
 - Do not use `Task.sleep` to wait for state changes. Inject `ImmediateDelay` / the mock socket and assert on streams or completed `async` results. Wait helpers must be bounded (≥ 2 seconds on CI).
 - New `.swift` files are discovered automatically; you do not need to edit an Xcode project file.
 
+## Public API harness
+
+`Tests/XanoRealtimeAPIValidator/` is the approved public surface. `swift test` fails if a public type, member, or enum case is added or removed without updating that target, if a function/init/subscript argument list changes (inventory keys use Swift selector form, e.g. `enterBackground()` vs `enterBackground(force:)`), or if a compile-lock signature no longer type-checks.
+
+- Update the harness in the same PR as the API change, and only when that change is expected and approved. Do not edit it just to make tests green.
+- Do not hand-edit `PublicAPIInventory.swift`. After an approved API change, regenerate it and review the diff:
+
+```bash
+REGENERATE_PUBLIC_API_INVENTORY=1 swift test --filter scannedPublicAPIMatchesApprovedInventory
+```
+- Use `import XanoRealtime` only. `@testable import` would lock internals and defeat the check.
+- Semver from an approved harness diff: inventory/lock **only gained** symbols, with no removals or signature edits → **minor**. Anything removed or re-signed, or a new enum case (exhaustive-switch churn) → **major**.
+
+### Deprecating a public API
+
+A deprecated symbol is still public API. Keep it in the compile-lock and `PublicAPIInventory` until it is actually removed (that removal is a **major** bump). The compile-lock will then emit deprecation warnings; with `-warnings-as-errors` those fail the `XanoRealtimeAPIValidator` target.
+
+Do **not** drop the lock or the inventory entry to silence that. On the first deprecation, exempt that diagnostic group on the validator target only (leave `XanoRealtimeTests` unchanged). Warning-group flags need Swift 6.1 (SE-0443). If the package is still `swift-tools-version:6.0`, bump the tools version (and the README Swift floor) in the same PR.
+
+In `Package.swift`, on `XanoRealtimeAPIValidator` only, keep `-warnings-as-errors` first, then downgrade deprecations. Order matters: if `-Wwarning` comes first, `-warnings-as-errors` upgrades deprecation again.
+
+```swift
+.swiftSettings: [
+    .unsafeFlags([
+        "-warnings-as-errors",
+        "-Wwarning", "DeprecatedDeclaration"
+    ])
+]
+```
+
+Unused bindings, isolation, and other harness mistakes stay fatal. Deprecation stays a warning until the symbol is removed and the harness is updated for the major bump.
+
 ## Pull requests
 
-- Keep the change focused. Protocol or public-API changes should update `docs/` in the same PR.
+- Keep the change focused. Protocol or public-API changes should update `docs/` and `Tests/XanoRealtimeAPIValidator/` in the same PR.
 - Include tests for new behavior, especially encode/decode, URL/subprotocol assembly, reconnect close codes, and channel fan-out.
 - Describe *why* the change exists in the PR body.
 - Do not commit secrets, instance tokens, or machine-specific paths.
