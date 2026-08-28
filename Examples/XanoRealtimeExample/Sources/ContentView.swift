@@ -91,7 +91,7 @@ struct ChannelSessionView: View {
                 .padding()
             }
             .navigationTitle("Xano Realtime")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationBarTitle()
             .toolbar {
                 ToolbarItem(placement: .automatic) {
                     Button("Config") {
@@ -232,5 +232,20 @@ struct ConfigurationValuesView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Extensions
+
+/// Platform-specific navigation chrome for the example app.
+extension View {
+    /// Uses an inline navigation-bar title on iOS. A no-op on macOS, where that API does not exist.
+    @ViewBuilder
+    func inlineNavigationBarTitle() -> some View {
+        #if os(iOS)
+        navigationBarTitleDisplayMode(.inline)
+        #else
+        self
+        #endif
     }
 }
