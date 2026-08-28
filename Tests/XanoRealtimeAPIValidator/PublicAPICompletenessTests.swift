@@ -21,7 +21,7 @@ private enum PublicAPIScanner {
         var name: String
         /// Swift keyword for the declaration.
         var kind: String
-        /// Whether the declaration is marked `public`.
+        /// Whether the declaration is marked `public` or `open`.
         var isPublic: Bool
     }
 
@@ -46,6 +46,23 @@ private enum PublicAPIScanner {
         /// Remainder of the line after the name (generics, parameters, accessors).
         var remainder: String
     }
+
+    // MARK: - Properties
+
+    /// Access-control and declaration modifiers consumed before a type or member kind.
+    private static let declarationModifiers: Set<String> = [
+        "public", "open", "package", "internal", "fileprivate", "private",
+        "final", "static", "class", "indirect",
+        "mutating", "nonmutating", "nonisolated",
+        "convenience", "required", "override",
+        "lazy", "unowned", "weak", "optional", "dynamic"
+    ]
+
+    /// Type-declaration keywords that end the modifier prefix.
+    private static let typeKinds = ["actor", "class", "struct", "enum", "protocol", "typealias"]
+
+    /// Member-declaration keywords that end the modifier prefix.
+    private static let memberKinds = ["func", "var", "let", "subscript", "init"]
 
     // MARK: - Public API
 
@@ -86,7 +103,7 @@ private enum PublicAPIScanner {
     }
 
     /// Extracts public API keys from one Swift source file.
-    private static func scan(source: String) -> Set<String> {
+    fileprivate static func scan(source: String) -> Set<String> {
         var symbols: Set<String> = []
         var stack: [TypeFrame] = []
         var pending: PendingSignature?
@@ -133,49 +150,54 @@ private enum PublicAPIScanner {
             if typeDecl.isPublic {
                 symbols.insert(typeDecl.name)
             }
-            let opensBody = trimmed.contains("{")
-            stack.append(
-                TypeFrame(
+            if typeDecl.kind != "typealias" {
+                pushFrameIfBodyOpens(
                     name: typeDecl.name,
                     recordsCases: typeDecl.isPublic && typeDecl.kind == "enum",
-                    bodyDepth: opensBody ? depth + 1 : depth
+                    in: trimmed,
+                    depth: depth,
+                    stack: &stack,
+                    pending: &pending,
+                    symbols: &symbols
                 )
-            )
+            }
             return
         }
         if let extensionName = parseExtensionName(trimmed) {
-            let opensBody = trimmed.contains("{")
-            stack.append(
-                TypeFrame(
-                    name: extensionName,
-                    recordsCases: false,
-                    bodyDepth: opensBody ? depth + 1 : depth
-                )
+            pushFrameIfBodyOpens(
+                name: extensionName,
+                recordsCases: false,
+                in: trimmed,
+                depth: depth,
+                stack: &stack,
+                pending: &pending,
+                symbols: &symbols
             )
             return
         }
         guard let current = stack.last, depth == current.bodyDepth else {
             return
         }
-        if current.recordsCases, let caseName = parseEnumCaseName(trimmed) {
-            symbols.insert("\(current.name).\(caseName)")
-            return
+        if current.recordsCases {
+            let caseNames = parseEnumCaseNames(trimmed)
+            if !caseNames.isEmpty {
+                for caseName in caseNames {
+                    symbols.insert("\(current.name).\(caseName)")
+                }
+                return
+            }
         }
         if let member = parsePublicMember(trimmed) {
             recordMember(member, on: current.name, pending: &pending, symbols: &symbols)
         }
     }
 
-    /// Parses `public actor|class|struct|enum|protocol|typealias Name`.
+    /// Parses `actor|class|struct|enum|protocol|typealias Name` after any modifier prefix.
     private static func parseTypeDeclaration(_ trimmed: String) -> TypeDeclaration? {
         var rest = trimmed[...]
         skipAttributes(from: &rest)
-        let isPublic = consumeKeyword("public", from: &rest)
-        skipKeyword("final", from: &rest)
-        guard let kind = consumeOne(
-            of: ["actor", "class", "struct", "enum", "protocol", "typealias"],
-            from: &rest
-        ) else {
+        let isPublic = consumePublicAPIModifiers(from: &rest, stoppingBefore: typeKinds)
+        guard let kind = consumeOne(of: typeKinds, from: &rest) else {
             return nil
         }
         skipWhitespace(&rest)
@@ -196,32 +218,64 @@ private enum PublicAPIScanner {
         return takeIdentifier(from: &rest)
     }
 
-    /// Parses a public enum `case name` (not a switch `case .name`).
-    private static func parseEnumCaseName(_ trimmed: String) -> String? {
+    /// Pushes a type frame when `trimmed` opens a body, then scans any same-line members or cases.
+    private static func pushFrameIfBodyOpens(
+        name: String,
+        recordsCases: Bool,
+        in trimmed: String,
+        depth: Int,
+        stack: inout [TypeFrame],
+        pending: inout PendingSignature?,
+        symbols: inout Set<String>
+    ) {
+        guard let open = trimmed.firstIndex(of: "{") else {
+            return
+        }
+        stack.append(
+            TypeFrame(
+                name: name,
+                recordsCases: recordsCases,
+                bodyDepth: depth + 1
+            )
+        )
+        let body = String(trimmed[trimmed.index(after: open)...])
+            .trimmingCharacters(in: .whitespaces)
+        guard !body.isEmpty else {
+            return
+        }
+        parseDeclarations(
+            in: body,
+            depth: depth + 1,
+            stack: &stack,
+            pending: &pending,
+            symbols: &symbols
+        )
+    }
+
+    /// Parses public enum `case` names, including comma-separated lists (not switch `case .name`).
+    private static func parseEnumCaseNames(_ trimmed: String) -> [String] {
         var rest = trimmed[...]
         guard consumeKeyword("case", from: &rest) else {
-            return nil
+            return []
         }
         skipWhitespace(&rest)
         if rest.first == "." {
-            return nil
+            return []
         }
-        return takeIdentifier(from: &rest)
+        return splitParameters(String(rest)).compactMap { parameter in
+            var item = parameter[...]
+            return takeIdentifier(from: &item)
+        }
     }
 
-    /// Parses `public [static] func|var|let|subscript|init`.
+    /// Parses `func|var|let|subscript|init` when the modifier prefix includes `public` or `open`.
     private static func parsePublicMember(_ trimmed: String) -> MemberDeclaration? {
         var rest = trimmed[...]
         skipAttributes(from: &rest)
-        guard consumeKeyword("public", from: &rest) else {
+        guard consumePublicAPIModifiers(from: &rest, stoppingBefore: memberKinds) else {
             return nil
         }
-        skipKeyword("static", from: &rest)
-        skipKeyword("class", from: &rest)
-        guard let kind = consumeOne(
-            of: ["func", "var", "let", "subscript", "init"],
-            from: &rest
-        ) else {
+        guard let kind = consumeOne(of: memberKinds, from: &rest) else {
             return nil
         }
         if kind == "init" || kind == "subscript" {
@@ -515,6 +569,45 @@ private enum PublicAPIScanner {
         }
     }
 
+    /// Whether `public` or `open` appeared before the next type or member kind.
+    ///
+    /// Consumes access-control and declaration modifiers, including parenthesized
+    /// forms such as `private(set)`, until the next token is a kind in `kinds` or
+    /// is not a modifier.
+    private static func consumePublicAPIModifiers(
+        from rest: inout Substring,
+        stoppingBefore kinds: [String]
+    ) -> Bool {
+        var isPublicAPI = false
+        let kindSet = Set(kinds)
+        while true {
+            skipWhitespace(&rest)
+            guard let word = peekIdentifier(rest) else {
+                return isPublicAPI
+            }
+            if kindSet.contains(word) {
+                return isPublicAPI
+            }
+            guard declarationModifiers.contains(word) else {
+                return isPublicAPI
+            }
+            if word == "public" || word == "open" {
+                isPublicAPI = true
+            }
+            _ = takeIdentifier(from: &rest)
+            skipWhitespace(&rest)
+            if rest.first == "(" {
+                skipBalancedParens(from: &rest)
+            }
+        }
+    }
+
+    /// Returns the next identifier without consuming it.
+    private static func peekIdentifier(_ rest: Substring) -> String? {
+        var copy = rest
+        return takeIdentifier(from: &copy)
+    }
+
     /// Consumes `keyword` when it is the next identifier.
     @discardableResult
     private static func consumeKeyword(_ keyword: String, from rest: inout Substring) -> Bool {
@@ -528,11 +621,6 @@ private enum PublicAPIScanner {
         }
         rest = rest[after...]
         return true
-    }
-
-    /// Consumes `keyword` when present.
-    private static func skipKeyword(_ keyword: String, from rest: inout Substring) {
-        _ = consumeKeyword(keyword, from: &rest)
     }
 
     /// Consumes the first matching keyword in `keywords`.
@@ -574,6 +662,107 @@ private enum PublicAPIScanner {
     private static func isIdentifierContinue(_ character: Character) -> Bool {
         character == "_" || character.isLetter || character.isNumber
     }
+}
+
+// MARK: - Scanner unit tests
+
+@Test("records each comma-separated enum case")
+func recordsEachCommaSeparatedEnumCase() {
+    let symbols = PublicAPIScanner.scan(
+        source: """
+        public enum Palette {
+            case red, green, blue
+        }
+        """
+    )
+    #expect(symbols.contains("Palette"))
+    #expect(symbols.contains("Palette.red"))
+    #expect(symbols.contains("Palette.green"))
+    #expect(symbols.contains("Palette.blue"))
+}
+
+@Test("records same-line enum cases before the type frame closes")
+func recordsSameLineEnumCasesBeforeTheTypeFrameCloses() {
+    let symbols = PublicAPIScanner.scan(source: "public enum Flag { case on, off }")
+    #expect(symbols.contains("Flag"))
+    #expect(symbols.contains("Flag.on"))
+    #expect(symbols.contains("Flag.off"))
+}
+
+@Test("records comma-separated cases with associated values individually")
+func recordsCommaSeparatedCasesWithAssociatedValuesIndividually() {
+    let symbols = PublicAPIScanner.scan(
+        source: """
+        public enum ScanResult {
+            case success(Int), failure(String)
+        }
+        """
+    )
+    #expect(symbols.contains("ScanResult.success"))
+    #expect(symbols.contains("ScanResult.failure"))
+}
+
+@Test("records types when access and declaration modifiers appear in any order")
+func recordsTypesWhenModifiersAppearInAnyOrder() {
+    let symbols = PublicAPIScanner.scan(
+        source: """
+        final public class Ordered {
+            public var member: Int
+        }
+        open class Visible {
+            public var member: Int
+            open func hook() {}
+        }
+        public indirect enum Tree {
+            case leaf
+        }
+        """
+    )
+    #expect(symbols.contains("Ordered"))
+    #expect(symbols.contains("Ordered.member"))
+    #expect(symbols.contains("Visible"))
+    #expect(symbols.contains("Visible.member"))
+    #expect(symbols.contains("Visible.hook()"))
+    #expect(symbols.contains("Tree"))
+    #expect(symbols.contains("Tree.leaf"))
+}
+
+@Test("records members that use access-control and declaration modifiers")
+func recordsMembersThatUseAccessControlAndDeclarationModifiers() {
+    let symbols = PublicAPIScanner.scan(
+        source: """
+        public class Widget {
+            public private(set) var locked: Int
+            public mutating func flip() {}
+            public nonisolated func ping() {}
+            public final func close() {}
+            public convenience init() {}
+            public required init(name: String) {}
+        }
+        """
+    )
+    #expect(symbols.contains("Widget.locked"))
+    #expect(symbols.contains("Widget.flip()"))
+    #expect(symbols.contains("Widget.ping()"))
+    #expect(symbols.contains("Widget.close()"))
+    #expect(symbols.contains("Widget.init()"))
+    #expect(symbols.contains("Widget.init(name:)"))
+}
+
+@Test("does not attribute members after a typealias to the alias")
+func doesNotAttributeMembersAfterATypealiasToTheAlias() {
+    let symbols = PublicAPIScanner.scan(
+        source: """
+        public struct Container {
+            public typealias AliasName = Int
+            public var member: Int
+        }
+        """
+    )
+    #expect(symbols.contains("Container"))
+    #expect(symbols.contains("AliasName"))
+    #expect(symbols.contains("Container.member"))
+    #expect(!symbols.contains("AliasName.member"))
 }
 
 @Test("scanned public API matches the approved inventory")

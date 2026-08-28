@@ -95,12 +95,16 @@ Do **not** drop the lock or the inventory entry to silence that. On the first de
 In `Package.swift`, on `XanoRealtimeAPIValidator` only, keep `-warnings-as-errors` first, then downgrade deprecations. Order matters: if `-Wwarning` comes first, `-warnings-as-errors` upgrades deprecation again.
 
 ```swift
-.swiftSettings: [
-    .unsafeFlags([
-        "-warnings-as-errors",
-        "-Wwarning", "DeprecatedDeclaration"
-    ])
-]
+.testTarget(
+    name: "XanoRealtimeAPIValidator",
+    dependencies: ["XanoRealtime"],
+    swiftSettings: [
+        .unsafeFlags([
+            "-warnings-as-errors",
+            "-Wwarning", "DeprecatedDeclaration"
+        ])
+    ]
+)
 ```
 
 Unused bindings, isolation, and other harness mistakes stay fatal. Deprecation stays a warning until the symbol is removed and the harness is updated for the major bump.
