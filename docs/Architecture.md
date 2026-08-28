@@ -4,19 +4,19 @@ This package uses a **Hexagonal (Ports & Adapters)** core, an **actor** concurre
 
 ## Hexagon
 
-```
+```text
 Integrator app
     → XanoRealtimeClient (facade, actor)
         → XanoRealtimeChannel (actor)
             → Domain: models, state machine, backoff, fan-out
                 → WebSocketProviding (port)
                     → URLSessionWebSocketProvider (production adapter)
-                    → FakeWebSocketProvider (tests)
+                    → MockWebSocketProvider (tests)
 ```
 
 ### Dependency rule
 
-Nothing under `Domain/`, `Models/`, `Channel/`, `Client/`, `Reliability/`, or `Configuration/` may use `URLSession` networking types. Only `Sources/XanoRealtime/Adapters/` may. The port types (`WebSocketProviding`, `WebSocketTasking`, `WebSocketMessage`, `WebSocketLifecycleSink`) are the boundary.
+Nothing under `Domain/`, `Models/`, `Channel/`, `Client/`, `Reliability/`, or `Configuration/` may use `URLSession` networking types. Only `Sources/XanoRealtime/Adapters/` may. The port types (`WebSocketProviding`, `WebSocketTasking`, `WebSocketMessage`, `WebSocketLifecycleSink`) are the boundary. Those ports, `URLSessionWebSocketProvider`, and the client's injected-transport initializer are module-internal; integrators use `XanoRealtimeClient(configuration:)`.
 
 `.cursor/rules/architecture.mdc` restates this for agents working in the repo.
 

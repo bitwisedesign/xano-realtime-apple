@@ -58,7 +58,7 @@ The package is **Hexagonal (Ports & Adapters)** with **actors** and unidirection
 
 - Domain code (`Domain/`, `Models/`, `Channel/`, `Client/`, `Reliability/`, `Configuration/`) depends on ports only.
 - Only files under `Sources/XanoRealtime/Adapters/` may use `URLSession` networking types.
-- Tests inject `FakeWebSocketProvider`. Unit tests must not hit the network.
+- Tests inject `MockWebSocketProvider`. Unit tests must not hit the network.
 - `WebSocketConnection`, `XanoRealtimeClient`, and `XanoRealtimeChannel` are actors. Do not add `@unchecked Sendable` or `nonisolated(unsafe)`.
 
 See [docs/Architecture.md](docs/Architecture.md).
@@ -70,7 +70,7 @@ See [docs/Architecture.md](docs/Architecture.md).
 - Prefer `try` over `try?`. If you swallow an error on purpose (best-effort teardown), put an inline comment on that line explaining why.
 - Do not force-unwrap (`!`) in tests — use `try #require(...)`.
 - Tests use Swift Testing (`@Test`, `#expect`, `#require`), not XCTest.
-- Do not use `Task.sleep` to wait for state changes. Inject `ImmediateDelay` / the fake socket and assert on streams or completed `async` results. Wait helpers must be bounded (≥ 2 seconds on CI).
+- Do not use `Task.sleep` to wait for state changes. Inject `ImmediateDelay` / the mock socket and assert on streams or completed `async` results. Wait helpers must be bounded (≥ 2 seconds on CI).
 - New `.swift` files are discovered automatically; you do not need to edit an Xcode project file.
 
 ## Pull requests

@@ -4,7 +4,7 @@ import Testing
 
 @Test("filters inbound envelopes by options.channel and auto-joins on connect")
 func channelFiltersAndAutoJoins() async throws {
-    let provider = FakeWebSocketProvider()
+    let provider = MockWebSocketProvider()
     let client = XanoRealtimeClient(
         configuration: try testConfiguration(),
         provider: provider,
@@ -50,7 +50,7 @@ func channelFiltersAndAutoJoins() async throws {
 
 @Test("updates the presence cache from presence_full and presence_update")
 func presenceCacheUpdates() async throws {
-    let provider = FakeWebSocketProvider()
+    let provider = MockWebSocketProvider()
     let client = XanoRealtimeClient(
         configuration: try testConfiguration(),
         provider: provider,
@@ -97,9 +97,31 @@ func presenceCacheUpdates() async throws {
     #expect(await lobby.presence.map(\.socketId) == ["bravo"])
 }
 
+@Test("joins a second channel while already connected without a second lobby join")
+func joinsAdditionalChannelWhileConnected() async throws {
+    let provider = MockWebSocketProvider()
+    let client = XanoRealtimeClient(
+        configuration: try testConfiguration(),
+        provider: provider,
+        delay: ImmediateDelay()
+    )
+    let lobby = await client.channel("lobby")
+    let events = await collect(await lobby.events)
+    _ = try await events.wait(matching: { $0 == .connected })
+
+    let task = try #require(await provider.latestTask)
+    _ = await client.channel("room", options: ChannelOptions(presence: true))
+
+    let sent = try await task.sentEnvelopes
+    let lobbyJoins = sent.filter { $0.action == .join && $0.options?.channel == "lobby" }
+    let roomJoins = sent.filter { $0.action == .join && $0.options?.channel == "room" }
+    #expect(lobbyJoins.count == 1)
+    #expect(roomJoins.count == 1)
+}
+
 @Test("resends join after reconnect")
 func autoJoinAfterReconnect() async throws {
-    let provider = FakeWebSocketProvider()
+    let provider = MockWebSocketProvider()
     let client = XanoRealtimeClient(
         configuration: try testConfiguration(),
         provider: provider,
@@ -121,7 +143,7 @@ func autoJoinAfterReconnect() async throws {
 
 @Test("enterForeground requests history when catchUpOnForeground is set")
 func foregroundCatchUpRequestsHistory() async throws {
-    let provider = FakeWebSocketProvider()
+    let provider = MockWebSocketProvider()
     let client = XanoRealtimeClient(
         configuration: try testConfiguration(),
         provider: provider,
@@ -149,7 +171,7 @@ func foregroundCatchUpRequestsHistory() async throws {
 
 @Test("leave sends a leave envelope")
 func leaveSendsLeaveAction() async throws {
-    let provider = FakeWebSocketProvider()
+    let provider = MockWebSocketProvider()
     let client = XanoRealtimeClient(
         configuration: try testConfiguration(),
         provider: provider,

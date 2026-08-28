@@ -36,9 +36,12 @@ actor StreamCollector<Element: Sendable> {
         guard pump == nil else {
             return
         }
-        pump = Task {
+        pump = Task { [weak self] in
             for await value in stream {
-                self.append(value)
+                guard let self else {
+                    return
+                }
+                await self.append(value)
             }
         }
     }

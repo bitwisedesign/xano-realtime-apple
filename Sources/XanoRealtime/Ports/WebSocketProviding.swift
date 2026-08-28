@@ -1,7 +1,7 @@
 import Foundation
 
 /// Transport-agnostic WebSocket text or binary frame.
-public enum WebSocketMessage: Sendable, Equatable {
+enum WebSocketMessage: Sendable, Equatable {
     /// UTF-8 text frame.
     case string(String)
     /// Binary frame.
@@ -9,7 +9,7 @@ public enum WebSocketMessage: Sendable, Equatable {
 }
 
 /// Receives socket open and close notifications from a transport adapter.
-public protocol WebSocketLifecycleSink: Sendable {
+protocol WebSocketLifecycleSink: Sendable {
     /// Called when the adapter reports the socket is open.
     func webSocketDidOpen() async
     /// Called when the adapter reports the socket is closed.
@@ -23,7 +23,7 @@ public protocol WebSocketLifecycleSink: Sendable {
 /// A single WebSocket conversation created by ``WebSocketProviding``.
 ///
 /// Implementations must not expose `URLSession` types. Domain code depends only on this port.
-public protocol WebSocketTasking: Sendable {
+protocol WebSocketTasking: Sendable {
     /// Starts the handshake.
     func resume() async
     /// Waits for the next inbound frame.
@@ -50,8 +50,8 @@ public protocol WebSocketTasking: Sendable {
 
 /// Factory for WebSocket conversations.
 ///
-/// Production code uses ``URLSessionWebSocketProvider``. Tests inject a fake.
-public protocol WebSocketProviding: Sendable {
+/// Production code uses ``URLSessionWebSocketProvider``. Tests inject a mock.
+protocol WebSocketProviding: Sendable {
     /// Creates a task for `url` using `protocols` as `Sec-WebSocket-Protocol` values.
     ///
     /// - Parameters:
@@ -67,7 +67,7 @@ public protocol WebSocketProviding: Sendable {
 }
 
 /// Suspends for a duration; injectable so reconnect tests do not wait on the wall clock.
-public protocol DelayProviding: Sendable {
+protocol DelayProviding: Sendable {
     /// Waits for `duration` or until cancelled.
     ///
     /// - Parameter duration: Requested delay.
@@ -76,29 +76,25 @@ public protocol DelayProviding: Sendable {
 }
 
 /// Production delay that uses `Task.sleep`.
-public struct ContinuousClockDelay: DelayProviding {
-    /// Creates a clock-based delay.
-    public init() {}
+struct ContinuousClockDelay: DelayProviding {
 
     /// Sleeps for `duration` using the cooperative clock.
     ///
     /// - Parameter duration: Sleep length.
     /// - Throws: `CancellationError` if the task is cancelled.
-    public func wait(_ duration: Duration) async throws {
+    func wait(_ duration: Duration) async throws {
         try await Task.sleep(for: duration)
     }
 }
 
 /// Test delay that returns immediately after checking cancellation.
-public struct ImmediateDelay: DelayProviding {
-    /// Creates an immediate delay.
-    public init() {}
+struct ImmediateDelay: DelayProviding {
 
     /// Returns immediately unless the task is already cancelled.
     ///
     /// - Parameter duration: Ignored.
     /// - Throws: `CancellationError` if the task is cancelled.
-    public func wait(_ duration: Duration) async throws {
+    func wait(_ duration: Duration) async throws {
         try Task.checkCancellation()
     }
 }

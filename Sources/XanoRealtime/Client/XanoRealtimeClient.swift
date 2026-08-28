@@ -21,6 +21,10 @@ public actor XanoRealtimeClient {
     private let connection: WebSocketConnection
     /// Live channels keyed by name.
     private var channels: [String: XanoRealtimeChannel] = [:]
+    /// Channel names that have been sent `join` on the current socket.
+    private var joinedChannelNames: Set<String> = []
+    /// Whether ``joinAllChannels()`` has finished for the current connected socket.
+    private var hasFinishedConnectJoin = false
     /// Configuration snapshot used when constructing new channels.
     private let configuration: XanoRealtimeConfiguration
     /// Fan-out task that reads connection events.
@@ -31,6 +35,8 @@ public actor XanoRealtimeClient {
     public let connectionState: AsyncStream<ConnectionState>
     /// Optional iOS lifecycle observer.
     private var lifecycleBridge: LifecycleBridge?
+    /// True while a lifecycle-bridge attach Task is outstanding.
+    private var isAttachingLifecycleBridge = false
 
     // MARK: - Initialization
 
@@ -46,13 +52,13 @@ public actor XanoRealtimeClient {
         )
     }
 
-    /// Creates a client with an injected transport (tests and custom adapters).
+    /// Creates a client with an injected transport for tests.
     ///
     /// - Parameters:
     ///   - configuration: Instance URL, connection canonical, and options.
     ///   - provider: Transport factory.
     ///   - delay: Reconnect sleeper.
-    public init(
+    init(
         configuration: XanoRealtimeConfiguration,
         provider: any WebSocketProviding,
         delay: any DelayProviding = ImmediateDelay()
@@ -71,14 +77,15 @@ public actor XanoRealtimeClient {
 
     /// Returns the existing channel named `name`, or creates and registers one.
     ///
-    /// The first channel triggers ``connect()``. Reconnecting later re-sends `join`
-    /// for every registered channel.
+    /// The first channel triggers ``connect()``. If the socket is already connected
+    /// and the connect-time join pass has finished, this sends `join` for the new
+    /// channel. Reconnecting later re-sends `join` for every registered channel.
     ///
     /// - Parameters:
     ///   - name: Channel name.
     ///   - options: Join and catch-up options. Ignored when the channel already exists.
     /// - Returns: Channel handle.
-    public func channel(_ name: String, options: ChannelOptions = ChannelOptions()) -> XanoRealtimeChannel {
+    public func channel(_ name: String, options: ChannelOptions = ChannelOptions()) async -> XanoRealtimeChannel {
         if let existing = channels[name] {
             return existing
         }
@@ -90,13 +97,17 @@ public actor XanoRealtimeClient {
         )
         channels[name] = handle
         startServicesIfNeeded()
-        Task {
-            do {
-                try await connection.connect()
-            } catch let error as XanoRealtimeError {
-                await handle.deliverFailure(error)
-            } catch {
-                await handle.deliverFailure(.invalidConfiguration(String(describing: error)))
+        if await connection.connectionState == .connected, hasFinishedConnectJoin {
+            await sendJoin(for: handle)
+        } else {
+            Task {
+                do {
+                    try await connection.connect()
+                } catch let error as XanoRealtimeError {
+                    await handle.deliverFailure(error)
+                } catch {
+                    await handle.deliverFailure(.invalidConfiguration(String(describing: error)))
+                }
             }
         }
         return handle
@@ -156,7 +167,8 @@ public actor XanoRealtimeClient {
                 await self.routeConnectionEvents()
             }
         }
-        if configuration.automaticLifecycleHandling, lifecycleBridge == nil {
+        if configuration.automaticLifecycleHandling, lifecycleBridge == nil, !isAttachingLifecycleBridge {
+            isAttachingLifecycleBridge = true
             Task {
                 await self.attachLifecycleBridge()
             }
@@ -196,8 +208,14 @@ public actor XanoRealtimeClient {
     /// - Parameter envelope: Connection-status envelope.
     private func handleConnectionStatus(_ envelope: RealtimeEnvelope) async {
         guard case .connected = envelope.asEvent() else {
+            hasFinishedConnectJoin = false
+            joinedChannelNames.removeAll()
             return
         }
+        hasFinishedConnectJoin = false
+        joinedChannelNames.removeAll()
+        await joinAllChannels()
+        hasFinishedConnectJoin = true
         await joinAllChannels()
         if pendingForegroundCatchUp {
             pendingForegroundCatchUp = false
@@ -205,18 +223,32 @@ public actor XanoRealtimeClient {
         }
     }
 
-    /// Sends `join` for every registered channel.
+    /// Sends `join` for every registered channel that is not yet joined on this socket.
     private func joinAllChannels() async {
         let live = Array(channels.values)
         for handle in live {
-            let envelope = await handle.joinEnvelope
-            do {
-                try await connection.send(envelope)
-            } catch let error as XanoRealtimeError {
-                await handle.deliverFailure(error)
-            } catch {
-                await handle.deliverFailure(.encodingFailed(String(describing: error)))
-            }
+            await sendJoin(for: handle)
+        }
+    }
+
+    /// Sends `join` for `handle` unless this socket already joined that channel.
+    ///
+    /// - Parameter handle: Channel to join.
+    private func sendJoin(for handle: XanoRealtimeChannel) async {
+        let name = handle.name
+        guard !joinedChannelNames.contains(name) else {
+            return
+        }
+        joinedChannelNames.insert(name)
+        let envelope = await handle.joinEnvelope
+        do {
+            try await connection.send(envelope)
+        } catch let error as XanoRealtimeError {
+            joinedChannelNames.remove(name)
+            await handle.deliverFailure(error)
+        } catch {
+            joinedChannelNames.remove(name)
+            await handle.deliverFailure(.encodingFailed(String(describing: error)))
         }
     }
 
@@ -258,11 +290,14 @@ public actor XanoRealtimeClient {
 
     /// Attaches the opt-in UIKit lifecycle bridge when compiling with UIKit.
     private func attachLifecycleBridge() async {
+        defer { isAttachingLifecycleBridge = false }
         #if canImport(UIKit) && os(iOS)
         let bridge = await MainActor.run {
             LifecycleBridge(client: self)
         }
         lifecycleBridge = bridge
+        #else
+        lifecycleBridge = LifecycleBridge(client: self)
         #endif
     }
 }
@@ -288,6 +323,7 @@ extension XanoRealtimeClient: ChannelOutboundRouting {
     /// - Parameter name: Channel that left.
     func channelDidLeave(_ name: String) async {
         channels.removeValue(forKey: name)
+        joinedChannelNames.remove(name)
         if channels.isEmpty {
             await connection.disconnect()
         }

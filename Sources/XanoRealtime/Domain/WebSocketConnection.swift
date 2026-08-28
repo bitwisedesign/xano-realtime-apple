@@ -31,6 +31,8 @@ actor WebSocketConnection: WebSocketLifecycleSink {
     private var suppressReconnect = false
     /// Prevents double-handling of receive-loop errors and `didClose`.
     private var isHandlingClose = false
+    /// Generation of the active socket; stale open/close from a replaced task are ignored.
+    private var socketEpoch = 0
     /// Last close code reported by the adapter.
     private var lastCloseCode: WebSocketCloseCode = .unknown
     /// Outbound envelopes waiting for the next `connected` state.
@@ -181,21 +183,9 @@ actor WebSocketConnection: WebSocketLifecycleSink {
 
     // MARK: - WebSocketLifecycleSink
 
-    /// Marks the socket connected, resets backoff, and synthesizes `connection_status`.
+    /// Flushes the offline queue, marks the socket connected, and synthesizes `connection_status`.
     func webSocketDidOpen() async {
-        isHandlingClose = false
-        lastCloseCode = .unknown
-        backoff.reset()
-        applyState(.connected)
-        publishEnvelope(
-            RealtimeEnvelope(
-                action: .connectionStatus,
-                options: RealtimeActionOptions(),
-                payload: .object(["status": .string("connected")])
-            )
-        )
-        await flushOfflineQueue()
-        startHeartbeat()
+        await webSocketDidOpen(epoch: socketEpoch)
     }
 
     /// Handles adapter-reported close.
@@ -204,6 +194,44 @@ actor WebSocketConnection: WebSocketLifecycleSink {
     ///   - code: Close code.
     ///   - reason: Unused close reason.
     func webSocketDidClose(code: WebSocketCloseCode, reason: Data?) async {
+        await webSocketDidClose(epoch: socketEpoch, code: code, reason: reason)
+    }
+
+    /// Applies an open event when `epoch` is still the active socket.
+    ///
+    /// - Parameter epoch: Socket generation that reported open.
+    func webSocketDidOpen(epoch: Int) async {
+        guard epoch == socketEpoch else {
+            return
+        }
+        isHandlingClose = false
+        lastCloseCode = .unknown
+        backoff.reset()
+        await flushOfflineQueue()
+        guard epoch == socketEpoch else {
+            return
+        }
+        applyState(.connected)
+        publishEnvelope(
+            RealtimeEnvelope(
+                action: .connectionStatus,
+                options: RealtimeActionOptions(),
+                payload: .object(["status": .string("connected")])
+            )
+        )
+        startHeartbeat()
+    }
+
+    /// Applies a close event when `epoch` is still the active socket.
+    ///
+    /// - Parameters:
+    ///   - epoch: Socket generation that reported close.
+    ///   - code: Close code.
+    ///   - reason: Unused close reason.
+    func webSocketDidClose(epoch: Int, code: WebSocketCloseCode, reason: Data?) async {
+        guard epoch == socketEpoch else {
+            return
+        }
         lastCloseCode = code
         await handleTransportFailure(code: code)
     }
@@ -225,32 +253,38 @@ actor WebSocketConnection: WebSocketLifecycleSink {
     /// - Throws: ``XanoRealtimeError/invalidConfiguration(_:)`` when the URL cannot be built.
     private func openSocket() async throws {
         let url = try configuration.makeConnectionURL()
+        socketEpoch += 1
+        let epoch = socketEpoch
         isHandlingClose = false
         applyState(.connecting)
         let nextTask = await provider.makeTask(
             url: url,
             protocols: configuration.webSocketProtocols,
-            sink: self
+            sink: SocketEpochSink(connection: self, epoch: epoch)
         )
         task = nextTask
         await nextTask.resume()
-        startReceiveLoop(on: nextTask)
+        startReceiveLoop(on: nextTask, epoch: epoch)
     }
 
     /// Starts a detached receive loop for `socket`.
     ///
-    /// - Parameter socket: Active task.
-    private func startReceiveLoop(on socket: any WebSocketTasking) {
+    /// - Parameters:
+    ///   - socket: Active task.
+    ///   - epoch: Socket generation that owns this loop.
+    private func startReceiveLoop(on socket: any WebSocketTasking, epoch: Int) {
         receiveTask?.cancel()
         receiveTask = Task { [weak self] in
-            await self?.runReceiveLoop(on: socket)
+            await self?.runReceiveLoop(on: socket, epoch: epoch)
         }
     }
 
     /// Reads frames until the socket fails or the task is cancelled.
     ///
-    /// - Parameter socket: Active task.
-    private func runReceiveLoop(on socket: any WebSocketTasking) async {
+    /// - Parameters:
+    ///   - socket: Active task.
+    ///   - epoch: Socket generation that owns this loop.
+    private func runReceiveLoop(on socket: any WebSocketTasking, epoch: Int) async {
         while !Task.isCancelled {
             let message: WebSocketMessage
             do {
@@ -258,9 +292,15 @@ actor WebSocketConnection: WebSocketLifecycleSink {
             } catch is CancellationError {
                 return
             } catch {
+                guard epoch == socketEpoch else {
+                    return
+                }
                 await handleTransportFailure(
                     code: lastCloseCode == .unknown ? .abnormalClosure : lastCloseCode
                 )
+                return
+            }
+            guard epoch == socketEpoch else {
                 return
             }
             handleInbound(message)
@@ -314,14 +354,29 @@ actor WebSocketConnection: WebSocketLifecycleSink {
     }
 
     /// Writes queued envelopes in insertion order after reconnect.
+    ///
+    /// A transport failure stops the flush and puts the failed envelope plus any
+    /// not-yet-written envelopes back on ``offlineQueue`` for the next reconnect.
+    /// Encoding failures are reported and skipped so they cannot block the queue.
     private func flushOfflineQueue() async {
         let queued = offlineQueue
         offlineQueue.removeAll()
-        for envelope in queued {
+        var remaining = queued
+        while !remaining.isEmpty {
+            let envelope = remaining.removeFirst()
             do {
                 try await write(envelope)
+            } catch let error as XanoRealtimeError {
+                eventsContinuation.yield(.failure(error))
+                if case .encodingFailed = error {
+                    continue
+                }
+                offlineQueue.insert(contentsOf: [envelope] + remaining, at: 0)
+                return
             } catch {
-                eventsContinuation.yield(.failure(.encodingFailed(String(describing: error))))
+                eventsContinuation.yield(.failure(.connectionClosed(code: lastCloseCode)))
+                offlineQueue.insert(contentsOf: [envelope] + remaining, at: 0)
+                return
             }
         }
     }
@@ -355,8 +410,13 @@ actor WebSocketConnection: WebSocketLifecycleSink {
 
     /// Cancels loops and the active socket.
     ///
+    /// Sets ``isHandlingClose`` first so the adapter's close callback and a cancelled
+    /// receive loop do not enter ``handleTransportFailure(code:)`` for an intentional
+    /// disconnect or auth-token reconnect.
+    ///
     /// - Parameter code: Close code to send.
     private func closeActiveSocket(code: WebSocketCloseCode) async {
+        isHandlingClose = true
         heartbeatTask?.cancel()
         heartbeatTask = nil
         receiveTask?.cancel()
@@ -438,5 +498,33 @@ actor WebSocketConnection: WebSocketLifecycleSink {
     private func applyState(_ next: ConnectionState) {
         state = next
         stateContinuation.yield(next)
+    }
+}
+
+// MARK: - Extensions
+
+/// Forwards adapter lifecycle events only for one ``WebSocketConnection`` socket generation.
+private struct SocketEpochSink: WebSocketLifecycleSink {
+    // MARK: - Properties
+
+    /// Connection that owns the socket.
+    let connection: WebSocketConnection
+    /// Socket generation this sink reports for.
+    let epoch: Int
+
+    // MARK: - Public API
+
+    /// Forwards open when this generation is still active.
+    func webSocketDidOpen() async {
+        await connection.webSocketDidOpen(epoch: epoch)
+    }
+
+    /// Forwards close when this generation is still active.
+    ///
+    /// - Parameters:
+    ///   - code: Close code.
+    ///   - reason: Unused close reason.
+    func webSocketDidClose(code: WebSocketCloseCode, reason: Data?) async {
+        await connection.webSocketDidClose(epoch: epoch, code: code, reason: reason)
     }
 }

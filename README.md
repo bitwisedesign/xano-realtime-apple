@@ -32,24 +32,20 @@ let configuration = XanoRealtimeConfiguration(
 let client = XanoRealtimeClient(configuration: configuration)
 let lobby = await client.channel("lobby", options: ChannelOptions(presence: true))
 
-Task {
-    for await event in await lobby.events {
-        switch event {
-        case .connected:
-            break
-        case .message(let message):
-            print(message.payload)
-        case .presenceFull(let peers):
-            print(peers)
-        case .error(let error):
-            print(error)
-        default:
-            break
-        }
+for await event in await lobby.events {
+    switch event {
+    case .connected:
+        try await lobby.send(["text": "hello"])
+    case .message(let message):
+        print(message.payload)
+    case .presenceFull(let peers):
+        print(peers)
+    case .error(let error):
+        print(error)
+    default:
+        break
     }
 }
-
-try await lobby.send(["text": "hello"])
 ```
 
 ## Features

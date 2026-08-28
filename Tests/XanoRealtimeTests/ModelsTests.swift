@@ -23,6 +23,18 @@ func envelopeRoundTripPreservesWireKeys() throws {
     #expect(json.contains("\"socketId\""))
 }
 
+@Test("encodes a nil payload as JSON null and still decodes an omitted payload key")
+func envelopeEncodesNilPayloadAsJSONNull() throws {
+    let envelope = RealtimeEnvelope(action: .leave)
+    let data = try RealtimeCoder.shared.encode(envelope)
+    let json = try #require(String(data: data, encoding: .utf8))
+    #expect(json.contains("\"payload\":null"))
+
+    let omitted = Data("{\"action\":\"leave\"}".utf8)
+    let decoded = try RealtimeCoder.shared.decode(from: omitted)
+    #expect(decoded.payload == nil)
+}
+
 @Test("decodes unknown action strings as RealtimeAction.unknown")
 func unknownActionDecodesAsUnknown() throws {
     let json = """

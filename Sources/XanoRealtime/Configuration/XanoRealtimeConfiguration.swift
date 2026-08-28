@@ -7,7 +7,7 @@ import Foundation
 /// HTTP URLs is discarded, matching the official JS SDK.
 ///
 /// ```swift
-/// let configuration = try XanoRealtimeConfiguration(
+/// let configuration = XanoRealtimeConfiguration(
 ///     instanceBaseUrl: URL(string: "https://x8ki-letl-twmt.n7.xano.io")!,
 ///     connectionCanonical: "1lK90n16tnnylJpJ0Xa7Km6_KxA",
 ///     realtimeAuthToken: token
@@ -76,7 +76,7 @@ public struct XanoRealtimeConfiguration: Sendable, Equatable {
     ///
     /// - Returns: The WebSocket URL.
     /// - Throws: ``XanoRealtimeError/invalidConfiguration(_:)`` when host or canonical is missing.
-    public func makeConnectionURL() throws -> URL {
+    func makeConnectionURL() throws -> URL {
         let hostSource = instanceBaseUrl ?? apiGroupBaseUrl
         guard let hostSource else {
             throw XanoRealtimeError.invalidConfiguration(
@@ -105,7 +105,7 @@ public struct XanoRealtimeConfiguration: Sendable, Equatable {
     }
 
     /// WebSocket subprotocols to send; empty when no auth token is set.
-    public var webSocketProtocols: [String] {
+    var webSocketProtocols: [String] {
         guard let realtimeAuthToken, !realtimeAuthToken.isEmpty else {
             return []
         }

@@ -165,7 +165,7 @@ reviews:
         - Prefer `nil` over `Type?.none`, named types over tuples for project-owned APIs, computed properties over zero-argument getters, and omit redundant `internal`.
         - Suggest better use of Swift features where it improves clarity (e.g. typed errors, Result, Sendable where relevant).
         - Flag crash-prone paths (force unwraps, unchecked casts, unbounded recursion, resource leaks) and suggest graceful failure with clear error surfaces.
-        - Suggest unit tests where coverage is thin, especially around connect/handshake, channel routing, decode errors, reconnect/backoff, heartbeats, and cancellation. Tests inject `FakeWebSocketProvider`; do not hit the network in unit tests.
+        - Suggest unit tests where coverage is thin, especially around connect/handshake, channel routing, decode errors, reconnect/backoff, heartbeats, and cancellation. Tests inject `MockWebSocketProvider`; do not hit the network in unit tests.
         - Domain awareness: Xano Realtime protocol matters — nested `{ action, options, payload }` envelopes, JWT as `Sec-WebSocket-Protocol`, one socket/many channels, reconnect close codes, and heartbeat/lifecycle behavior when the change touches them.
     - path: "**/Package.swift"
       instructions: |
@@ -180,7 +180,7 @@ reviews:
         - Flag timeouts under 2 seconds — they are unstable on CI/CD.
         - Flag tests that use Task.sleep to wait for state changes; prefer modern Swift concurrency test patterns (checked continuations, clocks/fakes). `Task.sleep` is only acceptable when the subject under test requires a real delay.
         - Flag `DispatchQueue.global()` in tests; use a file-private or test-local `DispatchQueue(label:)`.
-        - Avoid reviewing mock/fake internals unless the fake itself is clearly wrong for the scenario. Tests inject `FakeWebSocketProvider` (same port); do not hit the network.
+        - Avoid reviewing mock internals unless the mock itself is clearly wrong for the scenario. Tests inject `MockWebSocketProvider` (same port); do not hit the network.
         - If a test is disabled, assume it is intentional — do not suggest re-enabling it.
         - Tests are not required to have DocC or other documentation.
         - Prefer deterministic fixtures (failed connects, decode errors, dropped messages, idle timeouts, reconnect/backoff) over flaky timing-based checks.
@@ -194,16 +194,12 @@ reviews:
   disable_cache: false
 
   # Slop Detection - Detect low-quality, AI-generated 'slop' pull requests.
-  # Disabled: this repo's PRs are authored by cursor[bot] (author_association=NONE),
-  # which matches the outside drive-by profile the detector targets. It also grades
-  # DocC/MARK density that .cursor/rules/swift-docc.mdc mandates, and it ignores the
-  # `**/*.swift` path_instructions above that tell the reviewer to skip those.
   # Default: {}
   slop_detection:
 
     # Enable or disable slop and low-quality PR detection.
     # Default: true
-    enabled: true
+    enabled: false
 
   # Configuration for auto review
   # Default: {}

@@ -45,6 +45,15 @@ public struct RealtimeEnvelope: Codable, Sendable, Equatable {
         }
     }
 
+    /// Encodes the envelope, always emitting `payload` as JSON `null` when absent.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(action, forKey: .action)
+        try container.encodeIfPresent(client, forKey: .client)
+        try container.encodeIfPresent(options, forKey: .options)
+        try container.encode(payload ?? .null, forKey: .payload)
+    }
+
     enum CodingKeys: String, CodingKey {
         case action
         case client

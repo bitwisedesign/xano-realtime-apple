@@ -3,19 +3,16 @@ import Foundation
 /// Encodes and decodes Xano Realtime envelopes and builds outbound actions.
 ///
 /// Mirrors `realtime-build-action.util.ts` in the official JS SDK.
-public struct RealtimeCoder: Sendable {
+struct RealtimeCoder: Sendable {
     /// Shared coder using default JSON encoder and decoder settings.
-    public static let shared = RealtimeCoder()
-
-    /// Creates a coder.
-    public init() {}
+    static let shared = RealtimeCoder()
 
     /// Encodes an envelope to UTF-8 JSON data.
     ///
     /// - Parameter envelope: Envelope to encode.
     /// - Returns: JSON bytes.
     /// - Throws: ``XanoRealtimeError/encodingFailed(_:)`` when encoding fails.
-    public func encode(_ envelope: RealtimeEnvelope) throws -> Data {
+    func encode(_ envelope: RealtimeEnvelope) throws -> Data {
         let encoder = JSONEncoder()
         do {
             return try encoder.encode(envelope)
@@ -31,7 +28,7 @@ public struct RealtimeCoder: Sendable {
     /// - Parameter data: Raw WebSocket text payload as data.
     /// - Returns: The decoded envelope.
     /// - Throws: ``XanoRealtimeError/decodingFailed(_:)`` when decoding fails.
-    public func decode(from data: Data) throws -> RealtimeEnvelope {
+    func decode(from data: Data) throws -> RealtimeEnvelope {
         let decoder = JSONDecoder()
         do {
             return try decoder.decode(RealtimeEnvelope.self, from: data)
@@ -45,7 +42,7 @@ public struct RealtimeCoder: Sendable {
     /// - Parameter text: UTF-8 JSON string.
     /// - Returns: The decoded envelope.
     /// - Throws: ``XanoRealtimeError/decodingFailed(_:)`` when the string is not UTF-8 JSON.
-    public func decode(from text: String) throws -> RealtimeEnvelope {
+    func decode(from text: String) throws -> RealtimeEnvelope {
         guard let data = text.data(using: .utf8) else {
             throw XanoRealtimeError.decodingFailed("Inbound text is not valid UTF-8")
         }
@@ -59,7 +56,7 @@ public struct RealtimeCoder: Sendable {
     ///   - history: Request history replay.
     ///   - presence: Request presence updates.
     /// - Returns: Outbound join envelope.
-    public func join(channel: String, history: Bool, presence: Bool) -> RealtimeEnvelope {
+    func join(channel: String, history: Bool, presence: Bool) -> RealtimeEnvelope {
         let payload: JSONValue
         do {
             payload = try JSONValue(encoding: JoinPayload(history: history, presence: presence))
@@ -80,7 +77,7 @@ public struct RealtimeCoder: Sendable {
     ///
     /// - Parameter channel: Channel name.
     /// - Returns: Outbound leave envelope with a null payload.
-    public func leave(channel: String) -> RealtimeEnvelope {
+    func leave(channel: String) -> RealtimeEnvelope {
         RealtimeEnvelope(
             action: .leave,
             options: RealtimeActionOptions(channel: channel),
@@ -96,7 +93,7 @@ public struct RealtimeCoder: Sendable {
     ///   - authenticated: Restrict delivery to authenticated members.
     ///   - socketId: Optional target peer for a private message.
     /// - Returns: Outbound message envelope.
-    public func message(
+    func message(
         channel: String,
         payload: JSONValue,
         authenticated: Bool? = nil,
@@ -117,7 +114,7 @@ public struct RealtimeCoder: Sendable {
     ///
     /// - Parameter channel: Channel name.
     /// - Returns: Outbound history envelope with a null payload.
-    public func history(channel: String) -> RealtimeEnvelope {
+    func history(channel: String) -> RealtimeEnvelope {
         RealtimeEnvelope(
             action: .history,
             options: RealtimeActionOptions(channel: channel),

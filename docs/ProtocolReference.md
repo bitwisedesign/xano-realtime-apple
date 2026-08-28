@@ -4,7 +4,7 @@ Wire format matches the official Xano JS SDK (`xano-inc/js-sdk`). This is **not*
 
 ## Connection URL
 
-```
+```text
 wss://{hostname}/rt/{realtimeConnectionCanonical}
 ```
 
@@ -77,5 +77,5 @@ Swift maps `dbo_id` / `row_id` to `RealtimePermissions.dboID` / `rowID`.
 | --- | --- | --- |
 | `history` | `false` | Sent in join payload |
 | `presence` | `false` | Sent in join payload |
-| `queueOfflineActions` | `false` (client-level flag is the one that queues) | JS parity: default off |
+| `queueOfflineActions` | `false` | JS parity: default off. Not consulted at send time; `XanoRealtimeConfiguration.queueOfflineActions` is the flag that queues. |
 | `catchUpOnForeground` | `false` | After `enterForeground()`, send `history` |

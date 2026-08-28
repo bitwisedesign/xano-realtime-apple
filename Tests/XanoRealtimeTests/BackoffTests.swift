@@ -21,6 +21,25 @@ func exponentialBackoffSequenceAndReset() {
     #expect(backoff.next() == .seconds(1))
 }
 
+@Test("backoff clamps current and next() to cap when initial exceeds cap or properties change")
+func exponentialBackoffClampsToCap() {
+    var backoff = ExponentialBackoff(initial: .seconds(120), cap: .seconds(60))
+    #expect(backoff.current == .seconds(60))
+    #expect(backoff.next() == .seconds(60))
+    #expect(backoff.current == .seconds(60))
+
+    backoff.initial = .seconds(90)
+    backoff.reset()
+    #expect(backoff.current == .seconds(60))
+    #expect(backoff.next() == .seconds(60))
+
+    backoff = ExponentialBackoff(initial: .seconds(8), cap: .seconds(60))
+    #expect(backoff.next() == .seconds(8))
+    backoff.cap = .seconds(4)
+    #expect(backoff.next() == .seconds(4))
+    #expect(backoff.current == .seconds(4))
+}
+
 @Test("close codes 1006 1011 1012 1013 1014 4000 reconnect; 1000 does not")
 func closeCodeClassification() {
     #expect(WebSocketCloseCode.abnormalClosure.shouldReconnect)

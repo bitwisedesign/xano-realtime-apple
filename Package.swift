@@ -17,12 +17,16 @@ let package = Package(
         .target(
             name: "XanoRealtime",
             swiftSettings: [
-                .swiftLanguageMode(.v6)
+                .swiftLanguageMode(.v6),
+                .unsafeFlags(["-warnings-as-errors"])
             ]
         ),
         .testTarget(
             name: "XanoRealtimeTests",
-            dependencies: ["XanoRealtime"]
+            dependencies: ["XanoRealtime"],
+            swiftSettings: [
+                .unsafeFlags(["-warnings-as-errors"])
+            ]
         )
     ]
 )

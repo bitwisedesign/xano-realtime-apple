@@ -3,7 +3,7 @@ import Foundation
 /// Production WebSocket adapter backed by `URLSessionWebSocketTask`.
 ///
 /// This is the only production type allowed to use `URLSession` networking APIs.
-public actor URLSessionWebSocketProvider: WebSocketProviding {
+actor URLSessionWebSocketProvider: WebSocketProviding {
     // MARK: - Properties
 
     /// Session that vends WebSocket tasks.
@@ -20,7 +20,7 @@ public actor URLSessionWebSocketProvider: WebSocketProviding {
     /// Creates a provider with a dedicated `URLSession`.
     ///
     /// - Parameter pingTimeout: How long each ping waits for a pong.
-    public init(pingTimeout: Duration = .seconds(10)) {
+    init(pingTimeout: Duration = .seconds(10)) {
         let registry = WebSocketLifecycleRegistry()
         let sessionDelegate = WebSocketSessionDelegate(registry: registry)
         let configuration = URLSessionConfiguration.default
@@ -39,7 +39,7 @@ public actor URLSessionWebSocketProvider: WebSocketProviding {
         session.invalidateAndCancel()
     }
 
-    // MARK: - Public API
+    // MARK: - WebSocketProviding
 
     /// Creates a `URLSessionWebSocketTask` wrapper for `url`.
     ///
@@ -48,7 +48,7 @@ public actor URLSessionWebSocketProvider: WebSocketProviding {
     ///   - protocols: Subprotocols (JWT when present).
     ///   - sink: Open/close observer.
     /// - Returns: An unstarted task.
-    public func makeTask(
+    func makeTask(
         url: URL,
         protocols: [String],
         sink: WebSocketLifecycleSink
@@ -139,6 +139,54 @@ final class WebSocketSessionDelegate: NSObject, URLSessionWebSocketDelegate {
             await registry.notifyClose(taskIdentifier: identifier, code: code, reason: reason)
         }
     }
+
+    // MARK: - URLSessionTaskDelegate
+
+    /// Drops the sink when the task ends, including transport errors that skip `didCloseWith`.
+    ///
+    /// A prior ``urlSession(_:webSocketTask:didCloseWith:reason:)`` already removed the entry;
+    /// this call is then a no-op.
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        let identifier = task.taskIdentifier
+        let reportedCloseCode: Int
+        if let socket = task as? URLSessionWebSocketTask {
+            reportedCloseCode = Int(socket.closeCode.rawValue)
+        } else {
+            reportedCloseCode = 0
+        }
+        let code = webSocketTaskCompletionCloseCode(
+            reportedCloseCode: reportedCloseCode,
+            hasError: error != nil
+        )
+        Task {
+            await registry.notifyClose(taskIdentifier: identifier, code: code, reason: nil)
+        }
+    }
+}
+
+/// Resolves the close code for a finished session task.
+///
+/// Prefers a reported WebSocket close frame. Transport failures with no close frame use `1006`.
+///
+/// - Parameters:
+///   - reportedCloseCode: Raw `URLSessionWebSocketTask.closeCode`, or `0` when invalid.
+///   - hasError: Whether the session delivered a completion error.
+/// - Returns: The reported code when valid; ``WebSocketCloseCode/abnormalClosure`` on error; otherwise ``WebSocketCloseCode/unknown``.
+func webSocketTaskCompletionCloseCode(
+    reportedCloseCode: Int,
+    hasError: Bool
+) -> WebSocketCloseCode {
+    if reportedCloseCode > 0 {
+        return WebSocketCloseCode(rawValue: reportedCloseCode)
+    }
+    if hasError {
+        return .abnormalClosure
+    }
+    return .unknown
 }
 
 /// Actor wrapping one `URLSessionWebSocketTask`.
@@ -200,6 +248,9 @@ actor URLSessionWebSocketTaskAdapter: WebSocketTasking {
 
     /// Sends a ping and waits for a pong or ``XanoRealtimeError/pingTimedOut``.
     ///
+    /// A timed-out ping cancels the underlying session task so ``performPing()`` is
+    /// interrupted instead of waiting indefinitely for a pong callback.
+    ///
     /// - Throws: A transport error or ``XanoRealtimeError/pingTimedOut``.
     func sendPing() async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -210,8 +261,16 @@ actor URLSessionWebSocketTaskAdapter: WebSocketTasking {
                 try await Task.sleep(for: self.pingTimeout)
                 throw XanoRealtimeError.pingTimedOut
             }
-            try await group.next()
-            group.cancelAll()
+            do {
+                try await group.next()
+                group.cancelAll()
+            } catch {
+                if error as? XanoRealtimeError == .pingTimedOut {
+                    await cancel(with: .abnormalClosure, reason: nil)
+                }
+                group.cancelAll()
+                throw error
+            }
         }
     }
 

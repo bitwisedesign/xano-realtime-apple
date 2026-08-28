@@ -6,24 +6,24 @@ import Foundation
 /// cellular NATs drop mappings without a TCP FIN, leaving `URLSessionWebSocketTask`
 /// looking open. Periodic `sendPing` frames both refresh the mapping and fail fast
 /// when a pong never arrives.
-public struct HeartbeatPolicy: Sendable, Equatable {
+struct HeartbeatPolicy: Sendable, Equatable {
     /// Time between pings; `nil` or non-positive disables the heartbeat.
-    public var interval: Duration?
+    var interval: Duration?
     /// How long a ping may wait for a pong before the socket is treated as dead.
-    public var timeout: Duration
+    var timeout: Duration
 
     /// Creates a heartbeat policy.
     ///
     /// - Parameters:
     ///   - interval: Ping interval; `nil` disables pings.
     ///   - timeout: Pong wait bound.
-    public init(interval: Duration? = .seconds(20), timeout: Duration = .seconds(10)) {
+    init(interval: Duration? = .seconds(20), timeout: Duration = .seconds(10)) {
         self.interval = interval
         self.timeout = timeout
     }
 
     /// Whether a heartbeat loop should run.
-    public var isEnabled: Bool {
+    var isEnabled: Bool {
         guard let interval else {
             return false
         }

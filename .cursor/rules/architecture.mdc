@@ -13,7 +13,7 @@ This package is a **Hexagonal (Ports & Adapters)** core with an **actor** concur
 - Domain core (`Domain/`, `Models/`, `Channel/`, `Client/`, `Reliability/`, `Configuration/`) depends on **ports** only.
 - Only files under `Sources/XanoRealtime/Adapters/` may use `URLSession` networking types (`URLSession`, `URLSessionWebSocketTask`, `URLSessionWebSocketDelegate`, `URLSessionWebSocketTask.Message`, `URLSessionWebSocketTask.CloseCode`).
 - `Ports/WebSocketProviding.swift` defines `WebSocketProviding`, `WebSocketTasking`, `WebSocketMessage`, and `WebSocketLifecycleSink`. Domain code talks to those, never to `URLSession`.
-- Tests inject `FakeWebSocketProvider` (same port). Do not hit the network in unit tests.
+- Tests inject `MockWebSocketProvider` (same port). Do not hit the network in unit tests.
 
 ```swift
 // BAD — Domain/WebSocketConnection.swift

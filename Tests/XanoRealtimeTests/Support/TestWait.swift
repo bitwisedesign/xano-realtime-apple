@@ -95,7 +95,7 @@ func collect<Element: Sendable>(_ stream: AsyncStream<Element>) async -> StreamC
     return collector
 }
 
-/// Builds a configuration that talks to a fake provider (heartbeat disabled).
+/// Builds a configuration that talks to a mock provider (heartbeat disabled).
 func testConfiguration(
     queueOfflineActions: Bool = false,
     connectionCanonical: String = "testCanonical"
