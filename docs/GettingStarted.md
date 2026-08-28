@@ -61,6 +61,8 @@ await client.disconnect()    // close immediately, no reconnect
 
 ## Auth token rotation
 
+`realtimeAuthToken` must be minted on Xano's **live** datasource. Tokens from any other data source leave the socket anonymous. See [KNOWN_LIMITATIONS.md](../KNOWN_LIMITATIONS.md).
+
 ```swift
 await client.setAuthToken(newJWT) // close code 4000, then reconnect with the new subprotocol
 ```

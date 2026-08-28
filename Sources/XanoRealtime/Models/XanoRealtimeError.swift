@@ -32,10 +32,25 @@ extension XanoRealtimeError: LocalizedError {
             return "Failed to decode a realtime frame: \(message)"
         case .encodingFailed(let message):
             return "Failed to encode a realtime frame: \(message)"
-        case .server:
-            return "The realtime server reported an error."
+        case .server(let payload):
+            return "The realtime server reported an error: \(Self.jsonDiagnostic(payload))"
         case .pingTimedOut:
             return "The realtime heartbeat ping timed out."
         }
+    }
+
+    /// Compact JSON for a server error payload.
+    ///
+    /// - Parameter value: Server body.
+    /// - Returns: Encoded JSON, or a debug description if encoding fails.
+    private static func jsonDiagnostic(_ value: JSONValue) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        // Best-effort: LocalizedError must return a string even if re-encoding fails.
+        guard let data = try? encoder.encode(value),
+              let text = String(data: data, encoding: .utf8) else {
+            return String(describing: value)
+        }
+        return text
     }
 }

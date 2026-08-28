@@ -2,6 +2,19 @@ import Foundation
 import Testing
 @testable import XanoRealtime
 
+@Test("empty or blank protocol lists skip Sec-WebSocket-Protocol negotiation")
+func emptyProtocolsSkipNegotiation() {
+    #expect(shouldNegotiateWebSocketProtocols([]) == false)
+    #expect(shouldNegotiateWebSocketProtocols([""]) == false)
+    #expect(shouldNegotiateWebSocketProtocols(["", ""]) == false)
+}
+
+@Test("a non-empty protocol list uses Sec-WebSocket-Protocol negotiation")
+func nonEmptyProtocolsUseNegotiation() {
+    #expect(shouldNegotiateWebSocketProtocols(["eyJhbGciOiJIUzI1NiJ9.payload.sig"]))
+    #expect(shouldNegotiateWebSocketProtocols(["", "eyJhbGciOiJIUzI1NiJ9.payload.sig"]))
+}
+
 @Test("completion close code uses 1006 when a transport error has no close frame")
 func completionCloseCodeUsesAbnormalClosureOnTransportError() {
     #expect(
