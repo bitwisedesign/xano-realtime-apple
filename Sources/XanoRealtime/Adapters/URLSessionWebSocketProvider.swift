@@ -53,10 +53,27 @@ actor URLSessionWebSocketProvider: WebSocketProviding {
         protocols: [String],
         sink: WebSocketLifecycleSink
     ) async -> any WebSocketTasking {
-        let socket = session.webSocketTask(with: url, protocols: protocols)
+        let socket: URLSessionWebSocketTask
+        if shouldNegotiateWebSocketProtocols(protocols) {
+            socket = session.webSocketTask(with: url, protocols: protocols.filter { !$0.isEmpty })
+        } else {
+            socket = session.webSocketTask(with: url)
+        }
         await registry.register(taskIdentifier: socket.taskIdentifier, sink: sink)
         return URLSessionWebSocketTaskAdapter(task: socket, pingTimeout: pingTimeout)
     }
+}
+
+/// Whether to call `webSocketTask(with:protocols:)` instead of `webSocketTask(with:)`.
+///
+/// Passing an empty `protocols` array still makes CFNetwork send
+/// `Sec-WebSocket-Protocol` with no value. The handshake then fails with 1006
+/// unless the server selects a protocol.
+///
+/// - Parameter protocols: Subprotocols the client would offer.
+/// - Returns: `true` when at least one protocol name is non-empty.
+func shouldNegotiateWebSocketProtocols(_ protocols: [String]) -> Bool {
+    protocols.contains { !$0.isEmpty }
 }
 
 /// Maps `URLSessionTask.taskIdentifier` to a lifecycle sink.

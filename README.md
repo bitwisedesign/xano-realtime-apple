@@ -21,6 +21,10 @@ Then add the `XanoRealtime` product to your target.
 
 `0.x` releases may include breaking API changes. See [VERSIONING.md](VERSIONING.md) for the 0.x pin and how to constrain the range.
 
+## Example app
+
+A SwiftUI sample that joins one channel lives in [Examples/XanoRealtimeExample](Examples/XanoRealtimeExample). Copy the xcconfig template, run `xcodegen generate`, and build for iOS or macOS. See that folder's [README](Examples/XanoRealtimeExample/README.md).
+
 ## Quick start
 
 ```swift
@@ -71,6 +75,7 @@ for await event in await lobby.events {
 - [Reconnection and heartbeats](docs/Reconnection.md)
 - [Foreground / background](docs/Lifecycle.md)
 - [Versioning policy](VERSIONING.md)
+- [Known limitations](KNOWN_LIMITATIONS.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## License

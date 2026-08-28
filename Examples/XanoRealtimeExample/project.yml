@@ -1,0 +1,44 @@
+name: XanoRealtimeExample
+options:
+  bundleIdPrefix: com.bitwisedesign.xanorealtime
+  deploymentTarget:
+    iOS: "16.0"
+    macOS: "13.0"
+  createIntermediateGroups: true
+packages:
+  XanoRealtime:
+    path: ../..
+targets:
+  XanoRealtimeExample:
+    type: application
+    supportedDestinations: [iOS, macOS]
+    deploymentTarget:
+      iOS: "16.0"
+      macOS: "13.0"
+    sources:
+      - Sources
+    dependencies:
+      - package: XanoRealtime
+        product: XanoRealtime
+    configFiles:
+      Debug: Config/Secrets.xcconfig
+      Release: Config/Secrets.xcconfig
+    settings:
+      base:
+        INFOPLIST_FILE: Support/Info.plist
+        INFOPLIST_FILE[sdk=macosx*]: Support/Info-macOS.plist
+        GENERATE_INFOPLIST_FILE: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.bitwisedesign.xanorealtime.example
+        PRODUCT_NAME: XanoRealtimeExample
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: 1
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM_ID)
+        SWIFT_VERSION: "6.0"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+schemes:
+  XanoRealtimeExample:
+    build:
+      targets:
+        XanoRealtimeExample: all

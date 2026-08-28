@@ -1,0 +1,46 @@
+name: ExampleBuild
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ExampleBuild:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Examples/XanoRealtimeExample
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Provide config
+        run: cp Config/Secrets.example.xcconfig Config/Secrets.xcconfig
+      - name: Generate project
+        run: xcodegen generate
+      - name: Build iOS
+        run: >
+          xcodebuild build
+          -project XanoRealtimeExample.xcodeproj
+          -scheme XanoRealtimeExample
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+      - name: Build macOS
+        run: >
+          xcodebuild build
+          -project XanoRealtimeExample.xcodeproj
+          -scheme XanoRealtimeExample
+          -destination 'generic/platform=macOS'
+          CODE_SIGNING_ALLOWED=NO

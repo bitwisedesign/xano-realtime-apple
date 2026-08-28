@@ -1,6 +1,8 @@
 .build
 .swiftpm
+.scripts/
 DerivedData
 .DS_Store
 *.xcodeproj
 xcuserdata
+Examples/**/Config/Secrets.xcconfig

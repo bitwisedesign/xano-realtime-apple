@@ -95,3 +95,13 @@ func decodeRejectsMissingAction() {
         try RealtimeCoder.shared.decode(from: data)
     }
 }
+
+@Test("server error description includes the payload JSON")
+func serverErrorDescriptionIncludesPayload() {
+    let error = XanoRealtimeError.server(.object([
+        "message": .string("channel not found")
+    ]))
+    let description = error.errorDescription
+    #expect(description?.contains("The realtime server reported an error") == true)
+    #expect(description?.contains("channel not found") == true)
+}
