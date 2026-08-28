@@ -184,6 +184,17 @@ reviews:
         - If a test is disabled, assume it is intentional — do not suggest re-enabling it.
         - Tests are not required to have DocC or other documentation.
         - Prefer deterministic fixtures (failed connects, decode errors, dropped messages, idle timeouts, reconnect/backoff) over flaky timing-based checks.
+    - path: ".github/workflows/**"
+      instructions: |
+        This is a public open-source repository. Anyone can open a pull request from a fork, so review GitHub Actions as untrusted-contributor CI — not as private-org automation.
+        - Treat every workflow change as potentially attacker-controlled. Prefer pull_request over pull_request_target. Flag pull_request_target, workflow_run, or issue_comment triggers unless the job is metadata-only (labels, comments, triage) and never checks out or executes pull-request / fork code.
+        - Flag secrets, write-capable GITHUB_TOKEN scopes, or deployment credentials on jobs that run untrusted PR code. Fork PRs must not receive repository secrets.
+        - Require an explicit top-level or job-level permissions block with least privilege (contents: read by default). Flag missing permissions, contents: write, packages: write, or id-token: write unless a trusted, non-fork job clearly needs them.
+        - Flag actions/checkout of github.event.pull_request.head.sha (or other PR/fork refs) in privileged workflows, persist-credentials: true on untrusted checkouts, and allow-unsafe-pr-checkout.
+        - Flag script injection from untrusted context (PR title, body, branch name, commit message, review comments) interpolated into run: shells or other interpreters.
+        - Prefer pinning third-party actions to a full commit SHA. Flag newly introduced unpinned third-party actions, tags that float (e.g. @v1 without a SHA), and actions from unknown publishers.
+        - Flag secret leakage in logs, overly broad cache restore-keys that could be poisoned by a fork PR, and uploading or downloading artifacts across a trust boundary without treating the contents as untrusted.
+        - Do not suggest adding secrets, privileged tokens, or private-repo-only patterns to make fork CI more convenient.
 
   # Abort the in-progress review if the pull request is closed or merged
   # Default: true
